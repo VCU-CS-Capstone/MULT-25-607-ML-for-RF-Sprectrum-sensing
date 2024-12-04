@@ -9,14 +9,14 @@ import threading
 
 usrp = uhd.usrp.MultiUSRP()
 
-num_samps = 1024 # number of samples received
+num_samps = 256 # number of samples received
 center_freq = 2425e6 # Hz
 sample_rate = 50e6 # Hz
 gain = 76 # dB
 Fs = sample_rate*2 
-N = 1024
-collects=1000
-threshold=-70
+N = 256
+collects=100
+threshold=-80
 
 
 def receive_iq_data(center_freq):
@@ -29,7 +29,7 @@ def receive_iq_data(center_freq):
     st_args.channels = [0]
     metadata = uhd.types.RXMetadata()
     streamer = usrp.get_rx_stream(st_args)
-    recv_buffer = np.zeros((1, 1024), dtype=np.complex64)
+    recv_buffer = np.zeros((1, 256), dtype=np.complex64)
 
     # Start Stream
     stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.start_cont)
@@ -38,14 +38,13 @@ def receive_iq_data(center_freq):
 
     # Receive Samples
     samples = np.zeros(num_samps, dtype=np.complex64)
-    for i in range(num_samps//1024):
+    for i in range(num_samps//256):
         streamer.recv(recv_buffer, metadata)
-        samples[i*1024:(i+1)*1024] = recv_buffer[0]
+        samples[i*256:(i+1)*256] = recv_buffer[0]
 
     # Stop Stream
     stream_cmd = uhd.types.StreamCMD(uhd.types.StreamMode.stop_cont)
     streamer.issue_stream_cmd(stream_cmd)
-
     #print(len(samples))
     #print(samples[0:10])
     return(samples)
@@ -53,7 +52,7 @@ def receive_iq_data(center_freq):
 
 def calculate_psd(x,):
     x = x * np.hamming(len(x)) # apply a Hamming window
-    PSD = np.abs(np.fft.fft(x))**2 / ((N*2)*Fs)
+    PSD = np.abs(np.fft.fft(x))**2 / ((N*8)*Fs)
     PSD_log = 10.0*np.log10(PSD)
     PSD_shifted = np.fft.fftshift(PSD_log)
     center_freq = 2.45e9 # frequency we tuned our SDR to
@@ -66,10 +65,8 @@ def event_detector(PSD_shifted):
     for i in range(len(PSD_shifted)):
                 if PSD_shifted[i] >= threshold:
                     print('Pass')
-                    #print(PSD_shifted[i])
                     return True
-                    
-                
+              
                     
     
 
@@ -77,9 +74,21 @@ def main():
     try:
         PSD= []
         for i in range(collects):
-            iq_data = receive_iq_data(center_freq=2.425e9)
+            iq_data = receive_iq_data(center_freq=2.40625e9)
             x=iq_data
-            iq_data = receive_iq_data(center_freq=2.475e9)
+            iq_data = receive_iq_data(center_freq=2.41875e9)
+            x+=iq_data
+            iq_data = receive_iq_data(center_freq=2.43125e9)
+            x+=iq_data
+            iq_data = receive_iq_data(center_freq=2.44375e9)
+            x+=iq_data
+            iq_data = receive_iq_data(center_freq=2.45625e9)
+            x+=iq_data
+            iq_data = receive_iq_data(center_freq=2.46875e9)
+            x+=iq_data
+            iq_data = receive_iq_data(center_freq=2.48125e9)
+            x+=iq_data
+            iq_data = receive_iq_data(center_freq=2.49375e9)
             x+=iq_data
             event, f = calculate_psd(x)
             if (event_detector(event)==True):
