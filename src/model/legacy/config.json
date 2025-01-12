@@ -1,0 +1,6 @@
+{
+    "center_frequency": 2437000000,
+    "bandwidth": 30000000,
+    "sample_rate": 30000000,
+    "ffts": 2048
+}
