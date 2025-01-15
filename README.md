@@ -17,6 +17,7 @@ This repository has been organized to follow the Linux Foundation OMP Mentorship
 
 ## Project Team
 - *Riley Stuart*  - *V2X Vectrus* - Mentor
+- *Chandler Barfield* - *V2X Vectrus* Mentor
 - *John Robie*  - *V2X Vectrus* - Mentor
 - *Tamer Nadeem* - *Computer Science* - Faculty Advisor
 - *Yanxiao Zhao* - *Electrical Engineering* - Faculty Advisor
