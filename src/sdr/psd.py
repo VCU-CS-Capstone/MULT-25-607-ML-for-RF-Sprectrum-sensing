@@ -4,25 +4,25 @@ import time
 from scipy.signal import welch
 import matplotlib.pyplot as plt
 
-def configure_sdr(sdr, center_freq=2.4e9, sample_rate=1e6, gain=30):
-    """
-    Configures the SDR with the specified parameters.
+sdr = uhd.usrp.MultiUSRP() 
 
-    :param sdr: UHD USRP source object.
-    :param center_freq: Center frequency in Hz (default 2.4 GHz).
-    :param sample_rate: Sampling rate in samples per second (default 1 MHz).
-    :param gain: RF gain in dB (default 30 dB).
-    """
-    sdr.set_rx_rate(sample_rate)
-    print(f"Sampling rate set to {sample_rate} Hz")
-    
-    sdr.set_rx_freq(uhd.types.TuneRequest(center_freq))
-    print(f"Center frequency set to {center_freq} Hz")
-    
-    sdr.set_rx_gain(gain)
-    print(f"Gain set to {gain} dB")
+num_samps = 1024 # number of samples received
+#center_freq = 2425e6 # Hz
+sample_rate = 40e6 # Hz
+gain = 60 # dB
+Fs = 50e6
+N = 1024
+collects=1000
+threshold=-80
+bandwidth=50e6
 
-def receive_iq_data(sdr, num_samples=1024, duration=1.0):
+def configure_sdr(center_freq=2.4e9):
+    sdr.set_rx_rate(sample_rate, 0)
+    sdr.set_rx_freq(uhd.libpyuhd.types.tune_request(center_freq), 0)
+    sdr.set_rx_gain(gain, 0)
+    sdr.set_rx_bandwidth(bandwidth, 0)
+
+def receive_iq_data(num_samples=1024, duration=1.0):
     """
     Receives IQ data from the SDR.
 
@@ -70,11 +70,17 @@ def calculate_psd(iq_data, sample_rate):
     """
     frequencies, psd = welch(
         iq_data,
-        fs=sample_rate,
-        nperseg=1024,
+        fs=sample_rate*2,
+        nperseg=256,
         return_onesided=False,
         scaling='density'
     )
+    plt.semilogy(frequencies, psd)
+    #plt.ylim([0.5e-3, 1])
+    plt.xlabel('frequency [Hz]')
+    plt.ylabel('PSD [V**2/Hz]')
+    plt.show()
+
     return frequencies, psd
 
 def plot_psd(frequencies, psd, center_freq):
@@ -89,7 +95,7 @@ def plot_psd(frequencies, psd, center_freq):
     adjusted_frequencies = frequencies + center_freq
 
     plt.figure(figsize=(10, 6))
-    plt.plot(adjusted_frequencies / 1e6, 10 * np.log10(psd), label="PSD")
+    plt.plot(adjusted_frequencies, 10 * np.log10(psd), label='psd')
     plt.title("Power Spectral Density (PSD)")
     plt.xlabel("Frequency (MHz)")
     plt.ylabel("Power Density (dB/Hz)")
@@ -98,29 +104,45 @@ def plot_psd(frequencies, psd, center_freq):
     plt.show()
 
 def main():
-    try:
-        # Create a USRP source
-        sdr = uhd.usrp.MultiUSRP()
+	try:
+		PSD= []
+		#for i in range(collects):
+		# Create a USRP source
+		sdr = uhd.usrp.MultiUSRP()
+		
+		# Configure the SDR
+		sample_rate = 50e6
+		center_freq = 2.425e9
+		configure_sdr(center_freq=center_freq)
 
-        # Configure the SDR
-        sample_rate = 1e6
-        center_freq = 2.4e9
-        configure_sdr(sdr, center_freq=center_freq, sample_rate=sample_rate, gain=76)
+		# Receive IQ data for 1 second
+		duration = 1.0
+		iq_data = receive_iq_data(num_samples=1024, duration=duration)
+		
+		
+		#Repeat at higher frequency
+		
+		# Configure the SDR
+		sample_rate = 50e6
+		center_freq = 2.475e9
+		configure_sdr(center_freq=center_freq)
+		
+		# Receive IQ data for 1 second
+		duration = 1.0
+		iq_data_2 = receive_iq_data(num_samples=1024, duration=duration)
 
-        # Receive IQ data for 5 seconds
-        duration = 5.0
-        iq_data = receive_iq_data(sdr, num_samples=2048, duration=duration)
+		# Save the IQ data to a file
+		#np.save("iq_data.npy", iq_data)
+		#print(f"IQ data saved to 'iq_data.npy'")
+		
+		iq_data_total=np.concatenate((iq_data,iq_data_2))
 
-        # Save the IQ data to a file
-        np.save("iq_data.npy", iq_data)
-        print(f"IQ data saved to 'iq_data.npy'")
+		# Calculate and plot PSD
+		frequencies, psd = calculate_psd(iq_data_total, sample_rate)
+		#plot_psd(frequencies, psd, center_freq=2.45e9)
 
-        # Calculate and plot PSD
-        frequencies, psd = calculate_psd(iq_data, sample_rate)
-        plot_psd(frequencies, psd, center_freq)
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+	except Exception as e:
+		print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
