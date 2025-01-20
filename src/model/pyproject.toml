@@ -5,14 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "flask>=3.1.0",
     "h5py>=3.12.1",
-    "ipykernel>=6.29.5",
-    "ipywidgets>=8.1.5",
+    "ipykernel",
+    "ipywidgets",
     "pandas>=2.2.3",
     "plot>=0.6.5",
     "pyqt6>=6.7.1",
     "scipy>=1.14.1",
+    "seaborn>=0.13.2",
     "torch>=2.5.1",
     "tqdm>=4.67.1",
 ]
