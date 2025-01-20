@@ -14,8 +14,8 @@ num_samps = 1024 # number of samples received
 sample_rate = 50e6 # Hz
 gain = 60 # dB
 Fs = 50e6
-N = 1024
-collects=4000
+
+collects=50
 #threshold=.63
 bandwidth=50e6
 
@@ -55,12 +55,13 @@ def receive_iq_data(center_freq):
 
 
 def calculate_psd(x,center_freq):
+    N = 2048
     x = x * np.hamming(len(x)) # apply a Hamming window
     PSD = np.abs(np.fft.fft(x))**2 / (N*Fs)
     PSD_log = 10.0*np.log10(PSD)
     PSD_shifted = np.fft.fftshift(PSD_log)
     
-    f = np.arange(Fs/-2.0, Fs/2, Fs/(N)) # start, stop, step.  centered around 0 Hz
+    f = np.arange(Fs/-1, Fs, Fs/(N/2)) # start, stop, step.  centered around 0 Hz
     f += center_freq # now add center frequency
     #plt.plot(f, PSD_shifted)
     #plt.show()
@@ -132,13 +133,10 @@ def main():
             iq_data = receive_iq_data(center_freq=2.425e9)
             iq_data_2 = receive_iq_data(center_freq=2.475e9)          
             
-            #iq_data_total = np.concatenate((iq_data,iq_data_2))
+            iq_data_total = np.concatenate((iq_data,iq_data_2))
             
-            event1, frequency1 = calculate_psd(iq_data, center_freq=2.425e9)
-            event2, frequency2 = calculate_psd(iq_data_2, center_freq=2.475e9)
-            #event, frequency = calculate_psd(iq_data_total, center_freq=2.45e9)
-            event = np.concatenate((event1,event2))
-            frequency = np.concatenate((frequency1,frequency2))
+            event, frequency = calculate_psd(iq_data_total, center_freq=2.45e9)
+           
             
             #print(len(frequency))
             #print(frequency)
@@ -150,11 +148,11 @@ def main():
             if ((event_detector(event, -80))==True):
                  #print(len(frequency))
                  #print(len(x))
-                 np.save(f"psd_wifi_ch10_{z}.npy", event)
+                 np.save(f"test_psd_wifi_ch10_{z}.npy", event.astype(np.float32))
                  print("Pass")
                  z+=1
-                 #plt.plot(frequency, event)
-                 #plt.show()
+                 plt.plot(frequency, event)
+                 plt.show()
             
         
 
