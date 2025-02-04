@@ -4633,7 +4633,6 @@ packages:
     engines: {node: '>=0.6.0', teleport: '>=0.2.0'}
     deprecated: |-
       You or someone you depend on is using Q, the JavaScript Promise library that gave JavaScript developers strong feelings about promises. They can almost certainly migrate to the native JavaScript promise now. Thank you literally everyone for joining me in this bet against the odds. Be excellent to each other.
-
       (For a CapTP with native promises, see @endo/eventual-send and @endo/captp)
 
   qs@6.13.0:
@@ -5265,6 +5264,22 @@ packages:
   terminal-link@2.1.1:
     resolution: {integrity: sha512-un0FmiRUQNr5PJqy9kP7c40F5BOfpGlYTrxonDChEZB7pzZxRNp/bt+ymiy9/npwXya9KH99nJ/GXFIiUkYGFQ==}
     engines: {node: '>=8'}
+
+  terser-webpack-plugin@5.3.10:
+    resolution: {integrity: sha512-BKFPWlPDndPs+NGGCr1U59t0XScL5317Y0UReNrHaw9/FwhPENlq6bfgs+4yPfyP51vqC1bQ4rp1EfXW5ZSH9w==}
+    engines: {node: '>= 10.13.0'}
+    peerDependencies:
+      '@swc/core': '*'
+      esbuild: '*'
+      uglify-js: '*'
+      webpack: ^5.1.0
+    peerDependenciesMeta:
+      '@swc/core':
+        optional: true
+      esbuild:
+        optional: true
+      uglify-js:
+        optional: true
 
   terser-webpack-plugin@5.3.11:
     resolution: {integrity: sha512-RVCsMfuD0+cTt3EwX8hSl2Ks56EbFHWmhluwcqoPKtBnfjiT6olaq7PRIRfhyU8nnC2MrnDrBLfrD/RGE+cVXQ==}
@@ -7259,11 +7274,7 @@ snapshots:
   '@pkgjs/parseargs@0.11.0':
     optional: true
 
-<<<<<<< HEAD
   '@pmmmwh/react-refresh-webpack-plugin@0.5.15(react-refresh@0.11.0)(type-fest@0.21.3)(webpack-dev-server@4.15.2)(webpack@5.97.1)':
-=======
-  '@pmmmwh/react-refresh-webpack-plugin@0.5.15(react-refresh@0.11.0)(type-fest@0.21.3)(webpack-dev-server@4.15.2(webpack@5.97.1))(webpack@5.97.1)':
->>>>>>> master
     dependencies:
       ansi-html: 0.0.9
       core-js-pure: 3.39.0
@@ -7273,19 +7284,12 @@ snapshots:
       react-refresh: 0.11.0
       schema-utils: 4.3.0
       source-map: 0.7.4
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
     optionalDependencies:
       type-fest: 0.21.3
       webpack-dev-server: 4.15.2(webpack-cli@6.0.1)(webpack@5.97.1)
 
   '@popperjs/core@2.11.8': {}
-=======
-      webpack: 5.97.1
-    optionalDependencies:
-      type-fest: 0.21.3
-      webpack-dev-server: 4.15.2(webpack@5.97.1)
->>>>>>> master
 
   '@rollup/plugin-babel@5.3.1(@babel/core@7.26.0)(@types/babel__core@7.20.5)(rollup@2.79.2)':
     dependencies:
@@ -8018,11 +8022,7 @@ snapshots:
       loader-utils: 2.0.4
       make-dir: 3.1.0
       schema-utils: 2.7.1
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   babel-plugin-istanbul@6.1.1:
     dependencies:
@@ -8433,11 +8433,7 @@ snapshots:
       postcss-value-parser: 4.2.0
       semver: 7.6.3
     optionalDependencies:
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   css-minimizer-webpack-plugin@3.4.1(webpack@5.97.1):
     dependencies:
@@ -8447,11 +8443,7 @@ snapshots:
       schema-utils: 4.3.0
       serialize-javascript: 6.0.2
       source-map: 0.6.1
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   css-prefers-color-scheme@6.0.3(postcss@8.4.49):
     dependencies:
@@ -9049,13 +9041,8 @@ snapshots:
       jest-worker: 28.1.3
       micromatch: 4.0.8
       normalize-path: 3.0.0
-<<<<<<< HEAD
-      schema-utils: 4.2.0
-      webpack: 5.97.1(webpack-cli@6.0.1)
-=======
       schema-utils: 4.3.0
-      webpack: 5.97.1
->>>>>>> master
+      webpack: 5.97.1(webpack-cli@6.0.1)
 
   eslint@8.57.1:
     dependencies:
@@ -9227,11 +9214,7 @@ snapshots:
     dependencies:
       loader-utils: 2.0.4
       schema-utils: 3.3.0
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   filelist@1.0.4:
     dependencies:
@@ -9314,11 +9297,7 @@ snapshots:
       semver: 7.6.3
       tapable: 1.1.3
       typescript: 4.9.5
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
     optionalDependencies:
       eslint: 8.57.1
 
@@ -9551,11 +9530,7 @@ snapshots:
       pretty-error: 4.0.0
       tapable: 2.2.1
     optionalDependencies:
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   htmlparser2@6.1.0:
     dependencies:
@@ -10527,11 +10502,7 @@ snapshots:
     dependencies:
       schema-utils: 4.3.0
       tapable: 2.2.1
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   minimalistic-assert@1.0.1: {}
 
@@ -10966,11 +10937,7 @@ snapshots:
       klona: 2.0.6
       postcss: 8.4.49
       semver: 7.6.3
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   postcss-logical@5.0.4(postcss@8.4.49):
     dependencies:
@@ -11354,11 +11321,7 @@ snapshots:
       shell-quote: 1.8.2
       strip-ansi: 6.0.1
       text-table: 0.2.0
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
     optionalDependencies:
       typescript: 4.9.5
     transitivePeerDependencies:
@@ -11387,11 +11350,7 @@ snapshots:
   react-scripts@5.0.1(@babel/plugin-syntax-flow@7.26.0(@babel/core@7.26.0))(@babel/plugin-transform-react-jsx@7.25.9(@babel/core@7.26.0))(@types/babel__core@7.20.5)(eslint@8.57.1)(react@18.2.0)(type-fest@0.21.3)(typescript@4.9.5)(webpack-cli@6.0.1):
     dependencies:
       '@babel/core': 7.26.0
-<<<<<<< HEAD
       '@pmmmwh/react-refresh-webpack-plugin': 0.5.15(react-refresh@0.11.0)(type-fest@0.21.3)(webpack-dev-server@4.15.2)(webpack@5.97.1)
-=======
-      '@pmmmwh/react-refresh-webpack-plugin': 0.5.15(react-refresh@0.11.0)(type-fest@0.21.3)(webpack-dev-server@4.15.2(webpack@5.97.1))(webpack@5.97.1)
->>>>>>> master
       '@svgr/webpack': 5.5.0
       babel-jest: 27.5.1(@babel/core@7.26.0)
       babel-loader: 8.4.1(@babel/core@7.26.0)(webpack@5.97.1)
@@ -11419,11 +11378,7 @@ snapshots:
       postcss: 8.4.49
       postcss-flexbugs-fixes: 5.0.2(postcss@8.4.49)
       postcss-loader: 6.2.1(postcss@8.4.49)(webpack@5.97.1)
-<<<<<<< HEAD
-      postcss-normalize: 10.0.1(browserslist@4.24.2)(postcss@8.4.49)
-=======
       postcss-normalize: 10.0.1(browserslist@4.24.3)(postcss@8.4.49)
->>>>>>> master
       postcss-preset-env: 7.8.3(postcss@8.4.49)
       prompts: 2.4.2
       react: 18.2.0
@@ -11437,15 +11392,9 @@ snapshots:
       source-map-loader: 3.0.2(webpack@5.97.1)
       style-loader: 3.3.4(webpack@5.97.1)
       tailwindcss: 3.4.0
-<<<<<<< HEAD
-      terser-webpack-plugin: 5.3.10(webpack@5.97.1)
+      terser-webpack-plugin: 5.3.11(webpack@5.97.1)
       webpack: 5.97.1(webpack-cli@6.0.1)
       webpack-dev-server: 4.15.2(webpack-cli@6.0.1)(webpack@5.97.1)
-=======
-      terser-webpack-plugin: 5.3.11(webpack@5.97.1)
-      webpack: 5.97.1
-      webpack-dev-server: 4.15.2(webpack@5.97.1)
->>>>>>> master
       webpack-manifest-plugin: 4.1.1(webpack@5.97.1)
       workbox-webpack-plugin: 6.6.0(@types/babel__core@7.20.5)(webpack@5.97.1)
     optionalDependencies:
@@ -11524,7 +11473,7 @@ snapshots:
 
   rechoir@0.8.0:
     dependencies:
-      resolve: 1.22.8
+      resolve: 1.22.9
 
   recursive-readdir@2.2.3:
     dependencies:
@@ -11675,11 +11624,7 @@ snapshots:
     dependencies:
       klona: 2.0.6
       neo-async: 2.6.2
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   sax@1.2.4: {}
 
@@ -11859,11 +11804,7 @@ snapshots:
       abab: 2.0.6
       iconv-lite: 0.6.3
       source-map-js: 1.2.1
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   source-map-support@0.5.21:
     dependencies:
@@ -12028,11 +11969,7 @@ snapshots:
 
   style-loader@3.3.4(webpack@5.97.1):
     dependencies:
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
 
   style-value-types@5.0.0:
     dependencies:
@@ -12155,23 +12092,23 @@ snapshots:
       ansi-escapes: 4.3.2
       supports-hyperlinks: 2.3.0
 
-<<<<<<< HEAD
   terser-webpack-plugin@5.3.10(webpack@5.97.1):
-=======
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.25
+      jest-worker: 27.5.1
+      schema-utils: 3.3.0
+      serialize-javascript: 6.0.2
+      terser: 5.37.0
+      webpack: 5.97.1(webpack-cli@6.0.1)
+
   terser-webpack-plugin@5.3.11(webpack@5.97.1):
->>>>>>> master
     dependencies:
       '@jridgewell/trace-mapping': 0.3.25
       jest-worker: 27.5.1
       schema-utils: 4.3.0
       serialize-javascript: 6.0.2
-<<<<<<< HEAD
-      terser: 5.36.0
-      webpack: 5.97.1(webpack-cli@6.0.1)
-=======
       terser: 5.37.0
-      webpack: 5.97.1
->>>>>>> master
+      webpack: 5.97.1(webpack-cli@6.0.1)
 
   terser@5.37.0:
     dependencies:
@@ -12404,7 +12341,6 @@ snapshots:
 
   webidl-conversions@6.1.0: {}
 
-<<<<<<< HEAD
   webpack-cli@6.0.1(webpack-dev-server@4.15.2)(webpack@5.97.1):
     dependencies:
       '@discoveryjs/json-ext': 0.6.3
@@ -12424,25 +12360,16 @@ snapshots:
     optionalDependencies:
       webpack-dev-server: 4.15.2(webpack-cli@6.0.1)(webpack@5.97.1)
 
-=======
->>>>>>> master
   webpack-dev-middleware@5.3.4(webpack@5.97.1):
     dependencies:
       colorette: 2.0.20
       memfs: 3.5.3
       mime-types: 2.1.35
       range-parser: 1.2.1
-<<<<<<< HEAD
-      schema-utils: 4.2.0
+      schema-utils: 4.3.0
       webpack: 5.97.1(webpack-cli@6.0.1)
 
   webpack-dev-server@4.15.2(webpack-cli@6.0.1)(webpack@5.97.1):
-=======
-      schema-utils: 4.3.0
-      webpack: 5.97.1
-
-  webpack-dev-server@4.15.2(webpack@5.97.1):
->>>>>>> master
     dependencies:
       '@types/bonjour': 3.5.13
       '@types/connect-history-api-fallback': 1.5.4
@@ -12475,12 +12402,8 @@ snapshots:
       webpack-dev-middleware: 5.3.4(webpack@5.97.1)
       ws: 8.18.0
     optionalDependencies:
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
       webpack-cli: 6.0.1(webpack-dev-server@4.15.2)(webpack@5.97.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -12490,11 +12413,7 @@ snapshots:
   webpack-manifest-plugin@4.1.1(webpack@5.97.1):
     dependencies:
       tapable: 2.2.1
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
       webpack-sources: 2.3.1
 
   webpack-merge@6.0.1:
@@ -12515,11 +12434,7 @@ snapshots:
 
   webpack-sources@3.2.3: {}
 
-<<<<<<< HEAD
   webpack@5.97.1(webpack-cli@6.0.1):
-=======
-  webpack@5.97.1:
->>>>>>> master
     dependencies:
       '@types/eslint-scope': 3.7.7
       '@types/estree': 1.0.6
@@ -12541,11 +12456,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.2.1
-<<<<<<< HEAD
       terser-webpack-plugin: 5.3.10(webpack@5.97.1)
-=======
-      terser-webpack-plugin: 5.3.11(webpack@5.97.1)
->>>>>>> master
       watchpack: 2.4.2
       webpack-sources: 3.2.3
     optionalDependencies:
@@ -12748,11 +12659,7 @@ snapshots:
       fast-json-stable-stringify: 2.1.0
       pretty-bytes: 5.6.0
       upath: 1.2.0
-<<<<<<< HEAD
       webpack: 5.97.1(webpack-cli@6.0.1)
-=======
-      webpack: 5.97.1
->>>>>>> master
       webpack-sources: 1.4.3
       workbox-build: 6.6.0(@types/babel__core@7.20.5)
     transitivePeerDependencies:
