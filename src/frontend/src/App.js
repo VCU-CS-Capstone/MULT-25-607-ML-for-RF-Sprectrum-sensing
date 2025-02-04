@@ -1,7 +1,15 @@
+// frontend/src/App.jsx
+import React from "react";
+import Header from "./components/Header";
 import Spectrogram from "./components/Spectrogram";
 
-export default function App() {
+const App = () => {
   return (
-    <Spectrogram width="1000" height="1000"/>
+    <div>
+      <Header />
+      <Spectrogram />
+    </div>
   );
-}
+};
+
+export default App;
