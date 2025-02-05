@@ -1,16 +1,19 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Box, Button, Typography, CircularProgress, Alert } from "@mui/material";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { Box, Button, Typography, CircularProgress, Alert, Divider } from "@mui/material";
 
 const Spectrogram = () => {
   const canvasRef = useRef(null);
+  const logContainerRef = useRef(null);
   const [classification, setClassification] = useState("Unknown");
-  const [connectionStatus, setConnectionStatus] = useState("Connecting");
+  const [connectionStatus, setConnectionStatus] = useState("Idle");
   const [error, setError] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [simulate, setSimulate] = useState(false);
   const socketRef = useRef(null);
   const drawTimeout = useRef(null);
 
-  // Function to create a color map (jet-like)
-  const createColorMap = () => {
+  // Precompute the color map only once
+  const colorMap = useMemo(() => {
     const colMap = [];
     for (let i = 0; i < 256; i++) {
       let r, g, b;
@@ -33,9 +36,9 @@ const Spectrogram = () => {
       }
       colMap.push([r, g, b, 255]); // Ensure alpha is 255
     }
-    console.log("Color map created with", colMap.length, "entries.");
+    // console.log("Color map created with", colMap.length, "entries.");
     return colMap;
-  };
+  }, []);
 
   // Function to downsample PSD data
   const downsamplePsd = (psd, targetWidth) => {
@@ -49,21 +52,17 @@ const Spectrogram = () => {
     return downsampled;
   };
 
-  // Spectrogram drawing logic with useCallback
+  // Spectrogram drawing logic
   const drawSpectrogram = useCallback((psd) => {
     try {
-      console.log("Starting to draw spectrogram");
-      if (!canvasRef.current) {
-        console.warn("Canvas reference is missing.");
-        return;
-      }
+      // Removed console logs for speed.
+      if (!canvasRef.current) return;
 
       if (
         !Array.isArray(psd) ||
         psd.length !== 8192 ||
         psd.some((val) => typeof val !== "number" || val < 0 || val > 1)
       ) {
-        console.warn("Invalid PSD data received.");
         setError("Invalid PSD data format.");
         return;
       }
@@ -73,24 +72,16 @@ const Spectrogram = () => {
       const width = canvas.width;
       const height = canvas.height;
 
-      console.log("Drawing spectrogram with canvas size:", width, height);
-
-      // Throttle drawing using requestAnimationFrame
       if (drawTimeout.current) return;
 
       drawTimeout.current = requestAnimationFrame(() => {
-        // Downsample PSD data to match canvas width
         const downsampled = downsamplePsd(psd, width);
-        console.log("Downsampled PSD length:", downsampled.length);
-        console.log("Sample downsampled PSD values:", downsampled.slice(0, 10));
-
         // Create ImageData for one line
         const imgData = ctx.createImageData(width, 1);
-        const colMap = createColorMap();
 
         for (let i = 0; i < width; i++) {
           const intensity = Math.min(255, Math.floor(downsampled[i] * 255));
-          const [r, g, b, a] = colMap[intensity];
+          const [r, g, b, a] = colorMap[intensity];
           const index = i * 4;
           imgData.data[index] = r;
           imgData.data[index + 1] = g;
@@ -108,85 +99,46 @@ const Spectrogram = () => {
 
         // Draw the new line at the bottom
         ctx.putImageData(imgData, 0, height - 1);
-
-        console.log("Spectrogram line drawn.");
-
-        // Reset timeout
         drawTimeout.current = null;
       });
     } catch (error) {
       console.error("Error in drawSpectrogram:", error);
       setError("Error drawing spectrogram.");
     }
-  }, []);
+  }, [colorMap]);
 
-  // WebSocket connection setup with useCallback dependencies
+  // Simulation: simulate incoming signal messages every 1.5 seconds when toggled on
   useEffect(() => {
-    console.log("Establishing WebSocket connection...");
-    const ws = new WebSocket("ws://localhost:8000/ws");
+    if (!simulate) return;
 
-    ws.onopen = () => {
-      console.log("Connected to WebSocket server");
-      setConnectionStatus("Connected");
-      setError(null);
-    };
+    setConnectionStatus("Simulating");
+    const interval = setInterval(() => {
+      // Create a simulated PSD array (all values set to 0.5)
+      const simulatedPSD = Array(8192).fill(0.5);
+      // Randomly choose a classification
+      const simulatedClassification = Math.random() < 0.5 ? "WiFi" : "Bluetooth";
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const { psd, classification } = data;
-
-        console.log("Received PSD data length:", psd.length);
-        console.log("Sample PSD values:", psd.slice(0, 10)); // Log first 10 values for brevity
-
-        // Validate PSD data
-        if (
-          !Array.isArray(psd) ||
-          psd.length !== 8192 ||
-          psd.some((val) => typeof val !== "number" || val < 0 || val > 1)
-        ) {
-          console.warn("Invalid PSD data received.");
-          setError("Invalid PSD data format.");
-          return;
-        }
-
-        // Process and draw the PSD data
-        drawSpectrogram(psd);
-
-        // Update classification
-        setClassification(classification);
-      } catch (error) {
-        console.error("Error parsing WebSocket message:", error);
-        setError("Received malformed data.");
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      setError("WebSocket encountered an error.");
-    };
-
-    ws.onclose = (event) => {
-      if (event.wasClean) {
-        console.log(
-          `WebSocket connection closed cleanly, code=${event.code} reason=${event.reason}`
-        );
-        setConnectionStatus("Disconnected");
-      } else {
-        console.warn("WebSocket connection died unexpectedly");
-        setError("WebSocket connection lost.");
-      }
-    };
-
-    socketRef.current = ws; // Assign to ref
+      drawSpectrogram(simulatedPSD);
+      setClassification(simulatedClassification);
+      const timestamp = new Date().toLocaleTimeString();
+      setLogs((prevLogs) => [
+        { timestamp, classification: simulatedClassification },
+        ...prevLogs,
+      ]);
+    }, 1500); // Faster interval (1.5 seconds)
 
     return () => {
-      if (socketRef.current) {
-        socketRef.current.close();
-        console.log("WebSocket connection closed.");
-      }
+      clearInterval(interval);
+      setConnectionStatus("Idle");
     };
-  }, [drawSpectrogram]);
+  }, [simulate, drawSpectrogram]);
+
+  // Scroll to top of logs when a new entry is added
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = 0;
+    }
+  }, [logs]);
 
   // Function to handle clearing the spectrogram
   const handleClear = () => {
@@ -195,16 +147,13 @@ const Spectrogram = () => {
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    console.log("Spectrogram cleared.");
   };
 
-  // Function to send messages via WebSocket
+  // Function to send messages via WebSocket (kept for production use)
   const sendMessage = (message) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify(message));
-      console.log("Message sent via WebSocket:", message);
     } else {
-      console.log("WebSocket is not open.");
       setError("WebSocket is not open. Cannot send message.");
     }
   };
@@ -233,101 +182,157 @@ const Spectrogram = () => {
         color: "#ffffff",
       }}
     >
-      <Box
-        sx={{
-          position: "relative",
-          width: "90%",
-          maxWidth: "800px",
-          height: "400px",
-          border: "2px solid #ffffff",
-          borderRadius: "8px",
-          overflow: "hidden",
-          backgroundColor: "#000000",
-          boxShadow: "0 4px 8px rgba(0, 0, 0, 0.3)",
-          marginBottom: "20px",
-        }}
-      >
-        <canvas ref={canvasRef} style={{ width: "100%", height: "100%" }} />
-
-        {connectionStatus === "Connecting" && (
-          <Box
-            sx={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              backgroundColor: "rgba(0,0,0,0.5)",
-              padding: "10px",
-              borderRadius: "8px",
-            }}
-          >
-            <CircularProgress color="inherit" />
-            <Typography variant="body1" sx={{ mt: 2 }}>
-              Connecting...
-            </Typography>
-          </Box>
-        )}
-        {error && (
-          <Alert
-            severity="error"
-            sx={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              zIndex: 1,
-            }}
-          >
-            {error}
-          </Alert>
-        )}
-      </Box>
-
+      {/* Main container with spectrogram and logs side by side */}
       <Box
         sx={{
           display: "flex",
-          gap: "10px",
+          flexDirection: { xs: "column", md: "row" },
+          gap: "20px",
+          width: "90%",
+          maxWidth: "1200px",
           marginBottom: "20px",
         }}
       >
-        <Button variant="contained" color="secondary" onClick={handleClear}>
-          Clear Spectrogram
-        </Button>
-        <Button
-          variant="outlined"
-          color="inherit"
-          onClick={() => sendMessage({ type: "request_update" })}
+        {/* Spectrogram and controls container */}
+        <Box
+          sx={{
+            flex: 2,
+            display: "flex",
+            flexDirection: "column",
+          }}
         >
-          Request Update
-        </Button>
-        <Button
-          variant="outlined"
-          color="primary"
-          onClick={() => drawSpectrogram(Array(8192).fill(0.5))}
-        >
-          Draw Mock Data
-        </Button>
-      </Box>
-
-      <Box>
-        <Typography variant="h6">
-          Current Classification:{" "}
           <Box
-            component="span"
             sx={{
-              padding: "8px 16px",
-              borderRadius: "16px",
-              backgroundColor: getBadgeColor(),
-              color: "#ffffff",
-              fontWeight: "bold",
+              position: "relative",
+              width: "100%",
+              height: "400px",
+              border: "2px solid #ffffff",
+              borderRadius: "8px",
+              overflow: "hidden",
+              backgroundColor: "#000000",
+              boxShadow: "0 4px 8px rgba(0, 0, 0, 0.3)",
+              marginBottom: "20px",
             }}
           >
-            {classification}
+            <canvas ref={canvasRef} style={{ width: "100%", height: "100%" }} />
+            {connectionStatus === "Idle" && (
+              <Box
+                sx={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  padding: "10px",
+                  borderRadius: "8px",
+                }}
+              >
+                <CircularProgress color="inherit" />
+                <Typography variant="body1" sx={{ mt: 2 }}>
+                  Idle
+                </Typography>
+              </Box>
+            )}
+            {error && (
+              <Alert
+                severity="error"
+                sx={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  zIndex: 1,
+                }}
+              >
+                {error}
+              </Alert>
+            )}
           </Box>
-        </Typography>
+
+          <Box
+            sx={{
+              display: "flex",
+              gap: "10px",
+              marginBottom: "20px",
+            }}
+          >
+            <Button variant="contained" color="secondary" onClick={handleClear}>
+              Clear Spectrogram
+            </Button>
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={() => sendMessage({ type: "request_update" })}
+            >
+              Request Update
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              onClick={() => setSimulate((prev) => !prev)}
+            >
+              {simulate ? "Stop Simulation" : "Toggle Simulation"}
+            </Button>
+          </Box>
+
+          <Box>
+            <Typography variant="h6">
+              Current Classification:{" "}
+              <Box
+                component="span"
+                sx={{
+                  padding: "8px 16px",
+                  borderRadius: "16px",
+                  backgroundColor: getBadgeColor(),
+                  color: "#ffffff",
+                  fontWeight: "bold",
+                }}
+              >
+                {classification}
+              </Box>
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Log panel container */}
+        <Box
+          sx={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            border: "2px solid #ffffff",
+            borderRadius: "8px",
+            height: "400px",
+            overflowY: "auto",
+            backgroundColor: "#1e1e1e",
+            padding: "10px",
+          }}
+          ref={logContainerRef}
+        >
+          <Typography variant="h6" sx={{ textAlign: "center", mb: 1 }}>
+            Signal Log
+          </Typography>
+          <Divider sx={{ backgroundColor: "#757575", mb: 1 }} />
+          {logs.length === 0 ? (
+            <Typography variant="body2" sx={{ textAlign: "center", color: "#757575" }}>
+              No signals detected yet.
+            </Typography>
+          ) : (
+            logs.map((log, index) => (
+              <Box key={index} sx={{ mb: 1, padding: "4px", borderBottom: "1px solid #333" }}>
+                <Typography variant="caption" color="secondary">
+                  {log.timestamp}
+                </Typography>
+                <Typography variant="body2" sx={{ ml: 1, display: "inline" }}>
+                  {log.classification}
+                </Typography>
+              </Box>
+            ))
+          )}
+        </Box>
       </Box>
     </Box>
   );
