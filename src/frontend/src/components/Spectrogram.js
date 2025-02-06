@@ -4,16 +4,17 @@ import { Box, Button, Typography, CircularProgress, Alert, Divider } from "@mui/
 const Spectrogram = () => {
   const canvasRef = useRef(null);
   const logContainerRef = useRef(null);
+  const tailRef = useRef(null); // holds tail info for fading the detection
+  const detectionEventRef = useRef(null); // holds a current detection event, if any
   const [classification, setClassification] = useState("Unknown");
   const [connectionStatus, setConnectionStatus] = useState("Idle");
   const [error, setError] = useState(null);
   const [logs, setLogs] = useState([]);
   const [simulate, setSimulate] = useState(false);
-  const socketRef = useRef(null);
   const drawTimeout = useRef(null);
   const simulationIntervalRef = useRef(null);
 
-  // Precompute the color map only once
+  // Precompute the color map for 256 intensity levels.
   const colorMap = useMemo(() => {
     const colMap = [];
     for (let i = 0; i < 256; i++) {
@@ -35,12 +36,12 @@ const Spectrogram = () => {
         g = 255 - (i - 192) * 4;
         b = 0;
       }
-      colMap.push([r, g, b, 255]); // Ensure alpha is 255
+      colMap.push([r, g, b, 255]);
     }
     return colMap;
   }, []);
 
-  // Function to downsample PSD data to match canvas width
+  // Downsample the PSD (8192 points) to match canvas width.
   const downsamplePsd = (psd, targetWidth) => {
     const step = Math.floor(psd.length / targetWidth);
     const downsampled = [];
@@ -52,11 +53,17 @@ const Spectrogram = () => {
     return downsampled;
   };
 
-  // Spectrogram drawing logic – draws a one-pixel-high line at the bottom
-  const drawSpectrogram = useCallback((psd) => {
+  /**
+   * Draws a one-pixel-high row on the spectrogram.
+   *
+   * @param {number[]} psd - Array of 8192 numbers (each in [0,1]).
+   * @param {number} globalOffset - A uniform brightness offset added to every pixel.
+   * @param {object|null} tailInfo - If provided, an object with { start, end, offset } that applies
+   *        an extra offset only for canvas pixels whose corresponding PSD index falls in that region.
+   */
+  const drawSpectrogram = useCallback((psd, globalOffset = 0, tailInfo = null) => {
     try {
       if (!canvasRef.current) return;
-
       if (
         !Array.isArray(psd) ||
         psd.length !== 8192 ||
@@ -65,27 +72,33 @@ const Spectrogram = () => {
         setError("Invalid PSD data format.");
         return;
       }
-
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       const width = canvas.width;
       const height = canvas.height;
-
+      const psdToCanvasFactor = 8192 / width;
       if (drawTimeout.current) return;
-
       drawTimeout.current = requestAnimationFrame(() => {
         const downsampled = downsamplePsd(psd, width);
         const imgData = ctx.createImageData(width, 1);
         for (let i = 0; i < width; i++) {
-          const intensity = Math.min(255, Math.floor(downsampled[i] * 255));
-          const [r, g, b, a] = colorMap[intensity];
+          const baseIntensity = Math.min(255, Math.floor(downsampled[i] * 255));
+          let offset = globalOffset;
+          if (tailInfo) {
+            const psdIndex = i * psdToCanvasFactor;
+            if (psdIndex >= tailInfo.start && psdIndex < tailInfo.end) {
+              offset = Math.max(offset, tailInfo.offset);
+            }
+          }
+          const clampedIntensity = Math.max(0, Math.min(255, Math.floor(baseIntensity + offset)));
+          const colorEntry = colorMap[clampedIntensity] || [0, 0, 0, 255];
+          const [r, g, b, a] = colorEntry;
           const index = i * 4;
           imgData.data[index] = r;
           imgData.data[index + 1] = g;
           imgData.data[index + 2] = b;
           imgData.data[index + 3] = a;
         }
-
         try {
           const image = ctx.getImageData(0, 1, width, height - 1);
           ctx.putImageData(image, 0, 0);
@@ -101,38 +114,54 @@ const Spectrogram = () => {
     }
   }, [colorMap]);
 
-  // Simulation: continuously update the spectrogram background,
-  // and with a small probability insert a simulated signal in the correct frequency band.
+  // Simulation effect for continuous spectrogram.
+  // Update interval is 50ms per row.
+  // Generates a noisy baseline, boosts rows when noise > threshold,
+  // and (with 15% chance or if an event is ongoing) simulates a long detection event.
   useEffect(() => {
     if (!simulate) return;
-
     setConnectionStatus("Simulating");
     simulationIntervalRef.current = setInterval(() => {
-      // Create a baseline PSD: all values set to 0.5
-      const psd = Array(8192).fill(0.5);
+      // Generate a noisy baseline (values around 0.5 ±0.4).
+      const psd = Array.from({ length: 8192 }, () => 0.5 + (Math.random() - 0.5) * 0.4);
+      let globalOffset = 0;
+      let tailInfo = null;
 
-      // With a 15% chance, simulate a signal
-      if (Math.random() < 0.15) {
-        // Randomly pick signal type
-        const simulatedClassification = Math.random() < 0.5 ? "WiFi" : "Bluetooth";
-        
-        // Insert the signal bump in the appropriate band:
-        if (simulatedClassification === "WiFi") {
-          // For WiFi, use a fixed band (e.g., indices 3500–3700)
-          const start = 3500;
-          const widthBump = Math.floor(Math.random() * 100) + 100; // width between 100 and 200
-          for (let i = start; i < start + widthBump && i < psd.length; i++) {
-            psd[i] = 1.0;
-          }
-        } else {
-          // For Bluetooth, use a different band (e.g., indices 1000–1100)
-          const start = 1000;
-          const widthBump = Math.floor(Math.random() * 50) + 50; // width between 50 and 100
-          for (let i = start; i < start + widthBump && i < psd.length; i++) {
-            psd[i] = 1.0;
-          }
+      // Check if the maximum noise exceeds a threshold.
+      const noiseThreshold = 0.65;
+      const maxVal = Math.max(...psd);
+      if (maxVal > noiseThreshold) {
+        globalOffset = 30;
+      }
+
+      // If a detection event is already active, use it.
+      if (detectionEventRef.current) {
+        // Continue the ongoing event.
+        const event = detectionEventRef.current;
+        globalOffset = 0; // Do not boost the current row further.
+        // Use the event's center and sigma.
+        var simulatedClassification = event.type;
+        var center = event.center;
+        var sigma = event.sigma;
+        event.duration--; // decrement duration
+        if (event.duration <= 0) {
+          detectionEventRef.current = null;
         }
-        // Update classification and add a log entry
+      } else if (Math.random() < 0.15) {
+        // Start a new detection event.
+        const simulatedClassification = Math.random() < 0.5 ? "WiFi" : "Bluetooth";
+        let center, sigma, duration;
+        if (simulatedClassification === "WiFi") {
+          center = 3600 + (Math.random() - 0.5) * 100; // around 3600 ±50
+          sigma = 60; // wider bump
+        } else {
+          center = 1050 + (Math.random() - 0.5) * 40; // around 1050 ±20
+          sigma = 30;
+        }
+        // Set duration between 10 and 20 ticks.
+        duration = Math.floor(Math.random() * 10) + 10;
+        detectionEventRef.current = { type: simulatedClassification, center, sigma, duration };
+        // Log the event once when it starts.
         setClassification(simulatedClassification);
         const timestamp = new Date().toLocaleTimeString();
         setLogs((prevLogs) => [
@@ -140,13 +169,34 @@ const Spectrogram = () => {
           ...prevLogs,
         ]);
       } else {
-        // No signal this tick; classification remains "Unknown"
         setClassification("Unknown");
       }
 
-      // Draw the PSD line (with or without a signal bump)
-      drawSpectrogram(psd);
-    }, 200); // Update every 200ms
+      // If there is an active detection event, add its Gaussian bump to the PSD.
+      if (detectionEventRef.current) {
+        const event = detectionEventRef.current;
+        const amplitude = 0.7; // bump amplitude
+        for (let i = 0; i < 8192; i++) {
+          const bump = amplitude * Math.exp(-Math.pow(i - event.center, 2) / (2 * Math.pow(event.sigma, 2)));
+          // Add the bump to the baseline, capping at 1.
+          psd[i] = Math.min(1, psd[i] + bump);
+        }
+        // Also, create a tail for subsequent rows.
+        tailRef.current = { center: event.center, sigma: event.sigma, steps: 10, offset: 120 };
+      }
+
+      // If a tail exists, prepare tailInfo.
+      if (tailRef.current) {
+        tailInfo = { center: tailRef.current.center, sigma: tailRef.current.sigma, offset: tailRef.current.steps * 20 };
+        tailRef.current.steps -= 1;
+        if (tailRef.current.steps <= 0) {
+          tailRef.current = null;
+        }
+      }
+
+      // Draw the current row.
+      drawSpectrogram(psd, globalOffset, tailInfo);
+    }, 50); // update every 50ms for a continuous effect
 
     return () => {
       clearInterval(simulationIntervalRef.current);
@@ -154,7 +204,7 @@ const Spectrogram = () => {
     };
   }, [simulate, drawSpectrogram]);
 
-  // Auto-scroll log to top when new entry is added
+  // Auto-scroll the log panel when new entries are added.
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = 0;
@@ -169,11 +219,7 @@ const Spectrogram = () => {
   };
 
   const sendMessage = (message) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify(message));
-    } else {
-      setError("WebSocket is not open. Cannot send message.");
-    }
+    console.log("Message sent:", message);
   };
 
   const getBadgeColor = () => {
@@ -284,18 +330,10 @@ const Spectrogram = () => {
             <Button variant="contained" color="secondary" onClick={handleClear}>
               Clear Spectrogram
             </Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              onClick={() => sendMessage({ type: "request_update" })}
-            >
+            <Button variant="outlined" color="inherit" onClick={() => sendMessage({ type: "request_update" })}>
               Request Update
             </Button>
-            <Button
-              variant="outlined"
-              color="primary"
-              onClick={() => setSimulate((prev) => !prev)}
-            >
+            <Button variant="outlined" color="primary" onClick={() => setSimulate((prev) => !prev)}>
               {simulate ? "Stop Simulation" : "Toggle Simulation"}
             </Button>
           </Box>
