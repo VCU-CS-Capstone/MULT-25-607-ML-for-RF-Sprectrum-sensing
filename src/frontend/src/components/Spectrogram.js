@@ -312,7 +312,7 @@ const Spectrogram = () => {
   useEffect(() => {
     if (simulate) return;
 
-    // Replace with your actual WebSocket server URL.
+    // Replace with actual WebSocket server URL.
     const ws = new WebSocket("ws://localhost:8080");
 
     ws.onopen = () => {
