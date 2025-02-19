@@ -4,24 +4,24 @@ import { Box, Button, Typography, CircularProgress, Alert, Divider } from "@mui/
 const Spectrogram = () => {
   // Refs for canvases and logs.
   const canvasRef = useRef(null);
-  const overlayCanvasRef = useRef(null); // overlay for drawing detection boxes
+  const overlayCanvasRef = useRef(null);
   const logContainerRef = useRef(null);
   const tickCountRef = useRef(0); // counts how many rows have been drawn
-  
-  // Instead of a single detection event/box, we maintain arrays.
-  const detectionEventsRef = useRef([]);  // active detection events (for adding bumps)
-  const detectionBoxesRef = useRef([]);     // detection boxes to draw on the overlay
-  
+
+  // Arrays for storing detection events and boxes.
+  const detectionEventsRef = useRef([]);
+  const detectionBoxesRef = useRef([]);
+
   const [classification, setClassification] = useState("Unknown");
   const [connectionStatus, setConnectionStatus] = useState("Idle");
   const [error, setError] = useState(null);
   const [logs, setLogs] = useState([]);
   const [simulate, setSimulate] = useState(false);
-  
+
   const drawTimeout = useRef(null);
   const simulationIntervalRef = useRef(null);
 
-  // Precompute a color map for 256 intensity levels.
+  // Precompute a color map for 256 intensity levels (blue -> cyan -> green -> yellow -> red).
   const colorMap = useMemo(() => {
     const colMap = [];
     for (let i = 0; i < 256; i++) {
@@ -48,7 +48,7 @@ const Spectrogram = () => {
     return colMap;
   }, []);
 
-  // Downsample the PSD (8192 points) to match the canvas width.
+  // Downsample the PSD to match the canvas width.
   const downsamplePsd = (psd, targetWidth) => {
     const step = Math.floor(psd.length / targetWidth);
     const downsampled = [];
@@ -61,6 +61,48 @@ const Spectrogram = () => {
   };
 
   /**
+   * Generate a PSD row with:
+   * 1) Baseline noise
+   * 2) Stable horizontal lines at specific frequencies
+   * 3) A vertical band in the center (around freq=1024) that’s brighter
+   * 4) Mild random flicker
+   */
+  const generateStructuredPsd = (timeIndex) => {
+    const psd = new Array(2048).fill(0);
+
+    // 1) Baseline noise (~0.2 + random)
+    for (let i = 0; i < 2048; i++) {
+      psd[i] = 0.2 + Math.random() * 0.1;
+    }
+
+    // 2) Stable horizontal lines (boosted amplitude)
+    //    e.g., lines at [100, 200, 400, 800, 1200, 1600]
+    const stableLines = [100, 200, 400, 800, 1200, 1600];
+    stableLines.forEach((freqIndex) => {
+      // Stronger boost so lines are easier to see
+      psd[freqIndex] += 0.6 + Math.random() * 0.2; 
+    });
+
+    // 3) Vertical band in the center ([900..1140])
+    for (let i = 900; i <= 1140; i++) {
+      psd[i] += 0.3;
+    }
+
+    // 4) Mild random flicker/burst every ~15 ticks
+    if (timeIndex % 15 === 0) {
+      for (let i = 600; i <= 650; i++) {
+        psd[i] += Math.random() * 0.3;
+      }
+    }
+
+    // Clamp to [0,1]
+    for (let i = 0; i < 2048; i++) {
+      if (psd[i] > 1) psd[i] = 1;
+    }
+    return psd;
+  };
+
+  /**
    * Draws one new row on the spectrogram.
    */
   const drawSpectrogram = useCallback(
@@ -69,17 +111,18 @@ const Spectrogram = () => {
         if (!canvasRef.current) return;
         if (
           !Array.isArray(psd) ||
-          psd.length !== 8192 ||
+          psd.length !== 2048 ||
           psd.some((val) => typeof val !== "number" || val < 0 || val > 1)
         ) {
           setError("Invalid PSD data format.");
           return;
         }
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
         const width = canvas.width;
         const height = canvas.height;
-        const psdToCanvasFactor = 8192 / width;
+        const psdToCanvasFactor = psd.length / width;
+
         if (drawTimeout.current) return;
         drawTimeout.current = requestAnimationFrame(() => {
           const downsampled = downsamplePsd(psd, width);
@@ -93,28 +136,30 @@ const Spectrogram = () => {
                 offset = Math.max(offset, tailInfo.offset);
               }
             }
-            const clampedIntensity = Math.max(0, Math.min(255, Math.floor(baseIntensity + offset)));
+            const clampedIntensity = Math.max(0, Math.min(255, baseIntensity + offset));
             const colorEntry = colorMap[clampedIntensity] || [0, 0, 0, 255];
             const [r, g, b, a] = colorEntry;
-            const index = i * 4;
-            imgData.data[index] = r;
-            imgData.data[index + 1] = g;
-            imgData.data[index + 2] = b;
-            imgData.data[index + 3] = a;
+            const idx = i * 4;
+            imgData.data[idx] = r;
+            imgData.data[idx + 1] = g;
+            imgData.data[idx + 2] = b;
+            imgData.data[idx + 3] = a;
           }
+
+          // Shift the image up one row
           try {
-            // Shift the image up one row.
             const image = ctx.getImageData(0, 1, width, height - 1);
             ctx.putImageData(image, 0, 0);
           } catch (e) {
             console.error("Error shifting image data:", e);
           }
-          // Draw the new row at the bottom.
+
+          // Draw the new row at the bottom
           ctx.putImageData(imgData, 0, height - 1);
           drawTimeout.current = null;
         });
-      } catch (error) {
-        console.error("Error in drawSpectrogram:", error);
+      } catch (err) {
+        console.error("Error in drawSpectrogram:", err);
         setError("Error drawing spectrogram.");
       }
     },
@@ -123,13 +168,9 @@ const Spectrogram = () => {
 
   /**
    * Draws all detection boxes on the overlay canvas.
-   *
-   * For each box (which was created when its event started) we compute:
-   * - y_top = (canvas.height - 1) - (currentTick - startTick)
-   * - y_bottom = y_top + totalTicks - 1  
-   * This makes the box surround all rows drawn for that event.
-   *
-   * If a box is completely scrolled off (y_bottom < 0) it is removed.
+   * We compute an effective frequency-to-pixel scaling:
+   *   step = floor(2048 / width)
+   *   pixelX = freqIndex / step
    */
   const drawDetectionBoxes = useCallback(() => {
     if (!canvasRef.current || !overlayCanvasRef.current) return;
@@ -138,23 +179,22 @@ const Spectrogram = () => {
     const ctx = overlayCanvas.getContext("2d");
     const width = canvas.width;
     const height = canvas.height;
-    // Clear the overlay.
     ctx.clearRect(0, 0, width, height);
+
+    const effectiveStep = Math.floor(2048 / width);
+    const scaleX = 1 / effectiveStep;
+
     const newBoxes = [];
     detectionBoxesRef.current.forEach((box) => {
       const currentTick = tickCountRef.current;
-      // Calculate the top edge where the event first appeared.
       const y_top = (height - 1) - (currentTick - box.startTick);
-      // The bottom edge is below y_top by the total number of rows (event duration + tail).
       let y_bottom = y_top + box.totalTicks - 1;
-      // Skip if the entire box has scrolled off the top.
       if (y_bottom < 0) return;
-      // Clamp the visible part.
+
       const visibleTop = Math.max(0, y_top);
       const visibleBottom = Math.min(height - 1, y_bottom);
       const rectHeight = visibleBottom - visibleTop + 1;
-      // Horizontal coordinates are computed from the PSD frequency data.
-      const scaleX = width / 8192;
+
       let x = (box.center - 3 * box.sigma) * scaleX;
       let rectWidth = (6 * box.sigma) * scaleX;
       if (x < 0) {
@@ -164,19 +204,18 @@ const Spectrogram = () => {
       if (x + rectWidth > width) {
         rectWidth = width - x;
       }
-      // Choose stroke color.
+
       let strokeColor;
       if (box.type === "Bluetooth") {
         strokeColor = "#2196F3"; // blue
       } else if (box.type === "WiFi") {
         strokeColor = "#F44336"; // red
       } else {
-        return; // no box for Unknown
+        return;
       }
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2;
       ctx.strokeRect(x, visibleTop, rectWidth, rectHeight);
-      // Keep this box if any part is still visible.
       newBoxes.push(box);
     });
     detectionBoxesRef.current = newBoxes;
@@ -184,85 +223,81 @@ const Spectrogram = () => {
 
   /**
    * Simulation effect.
-   *
-   * Every 50ms we generate a new PSD row and:
-   * - With a 5% chance, start a new detection event (WiFi or Bluetooth).
-   *   For each new event, we add its Gaussian bump to the PSD and push a new box.
-   * - For each active event, add its bump and decrement its duration.
-   * - Draw the spectrogram row and then draw all detection boxes.
+   * Every 50ms, we generate a structured PSD row and optionally add
+   * a detection event (Gaussian bump + bounding box).
    */
   useEffect(() => {
     if (!simulate) return;
     setConnectionStatus("Simulating");
+
     simulationIntervalRef.current = setInterval(() => {
-      // Generate a noisy baseline.
-      const psd = Array.from({ length: 8192 }, () => 0.5 + (Math.random() - 0.5) * 0.4);
+      // 1) Generate a structured baseline row
+      const psd = generateStructuredPsd(tickCountRef.current);
+
       let globalOffset = 0;
-      let tailInfo = null; // (optional: add tail effects if desired)
-      
-      // Boost if noise exceeds threshold.
-      const noiseThreshold = 0.65;
-      const maxVal = Math.max(...psd);
-      if (maxVal > noiseThreshold) {
-        globalOffset = 30;
-      }
-      
-      // With a 5% chance, start a new event.
+      let tailInfo = null;
+
+      // 2) Possibly add a new detection event (5% chance)
       if (Math.random() < 0.05) {
         const simulatedClassification = Math.random() < 0.5 ? "WiFi" : "Bluetooth";
         let eventCenter, eventSigma, eventDuration;
+
+        // Increased sigma for bigger signals
+        // WiFi: was ~6, now ~12
+        // Bluetooth: was ~3, now ~8
         if (simulatedClassification === "WiFi") {
-          eventCenter = 3600 + (Math.random() - 0.5) * 100;
-          eventSigma = 60;
+          eventCenter = 360 + (Math.random() - 0.5) * 10;
+          eventSigma = 12; 
         } else {
-          eventCenter = 1050 + (Math.random() - 0.5) * 40;
-          eventSigma = 30;
+          eventCenter = 105 + (Math.random() - 0.5) * 4;
+          eventSigma = 8; 
         }
-        eventDuration = Math.floor(Math.random() * 10) + 10; // duration (in ticks)
-        // Add a new detection event.
+
+        eventDuration = Math.floor(Math.random() * 10) + 10; // in ticks
+
+        // Create detection event
         detectionEventsRef.current.push({
           type: simulatedClassification,
           center: eventCenter,
           sigma: eventSigma,
           duration: eventDuration,
         });
-        // Create a corresponding detection box.
+        // Create detection box
         detectionBoxesRef.current.push({
           type: simulatedClassification,
           center: eventCenter,
           sigma: eventSigma,
           startTick: tickCountRef.current,
-          totalTicks: eventDuration + 10, // add extra tail rows if desired
+          totalTicks: eventDuration + 5,
         });
-        // Update the classification badge and log the event.
+
         setClassification(simulatedClassification);
         const timestamp = new Date().toLocaleTimeString();
         setLogs((prevLogs) => [{ timestamp, classification: simulatedClassification }, ...prevLogs]);
       } else {
-        // If no new event, set classification to Unknown.
         setClassification("Unknown");
       }
-      
-      // For every active detection event, add its Gaussian bump.
+
+      // 3) Add Gaussian bumps for each active detection event
+      // Increased amplitude from 0.7 -> 1.0 for stronger signals
       detectionEventsRef.current.forEach((event) => {
-        const amplitude = 0.7;
-        for (let i = 0; i < 8192; i++) {
+        const amplitude = 1.0;
+        for (let i = 0; i < 2048; i++) {
           const bump = amplitude * Math.exp(-Math.pow(i - event.center, 2) / (2 * Math.pow(event.sigma, 2)));
           psd[i] = Math.min(1, psd[i] + bump);
         }
-        // Decrement event duration.
+        // Decrement event duration
         event.duration--;
       });
-      // Remove finished events.
-      detectionEventsRef.current = detectionEventsRef.current.filter((event) => event.duration > 0);
-      
-      // Draw the spectrogram row.
+      // Remove finished events
+      detectionEventsRef.current = detectionEventsRef.current.filter((ev) => ev.duration > 0);
+
+      // 4) Draw the spectrogram row
       drawSpectrogram(psd, globalOffset, tailInfo);
       tickCountRef.current++;
-      // Draw all detection boxes on the overlay.
       drawDetectionBoxes();
     }, 50);
-    
+
     return () => {
       clearInterval(simulationIntervalRef.current);
       setConnectionStatus("Idle");
@@ -273,6 +308,73 @@ const Spectrogram = () => {
     };
   }, [simulate, drawSpectrogram, drawDetectionBoxes]);
 
+  // WebSocket effect (only if simulation is off).
+  useEffect(() => {
+    if (simulate) return;
+
+    // Replace with your actual WebSocket server URL.
+    const ws = new WebSocket("ws://localhost:8080");
+
+    ws.onopen = () => {
+      setConnectionStatus("Connected");
+      console.log("WebSocket connected");
+    };
+
+    ws.onmessage = (event) => {
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (e) {
+        console.error("Error parsing WebSocket message:", e);
+        return;
+      }
+      if (!Array.isArray(data) || data.length !== 2051) {
+        setError("Invalid data received from WebSocket.");
+        return;
+      }
+      // Extract PSD (first 2048) and detection info (last three)
+      const psdData = data.slice(0, 2048);
+      const detectionType = data[2048];
+      const startFreq = data[2049];
+      const endFreq = data[2050];
+
+      let classificationStr = "Unknown";
+      let tailInfo = null;
+      let globalOffset = 0;
+      if (detectionType === 1) {
+        classificationStr = "WiFi";
+        globalOffset = 30;
+        tailInfo = { start: startFreq, end: endFreq, offset: 30 };
+      } else if (detectionType === 2) {
+        classificationStr = "Bluetooth";
+        globalOffset = 30;
+        tailInfo = { start: startFreq, end: endFreq, offset: 30 };
+      }
+      setClassification(classificationStr);
+
+      if (detectionType !== 0) {
+        const timestamp = new Date().toLocaleTimeString();
+        setLogs((prevLogs) => [{ timestamp, classification: classificationStr }, ...prevLogs]);
+      }
+
+      drawSpectrogram(psdData, globalOffset, tailInfo);
+      tickCountRef.current++;
+      drawDetectionBoxes();
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+      setError("WebSocket encountered an error.");
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+      setConnectionStatus("Disconnected");
+    };
+
+    return () => ws.close();
+  }, [simulate, drawSpectrogram, drawDetectionBoxes]);
+
   // Auto-scroll the log panel when new entries are added.
   useEffect(() => {
     if (logContainerRef.current) {
@@ -280,22 +382,26 @@ const Spectrogram = () => {
     }
   }, [logs]);
 
+  // Clear the spectrogram + overlay
   const handleClear = () => {
     if (!canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-    if (overlayCanvasRef.current) {
-      const overlayCtx = overlayCanvasRef.current.getContext("2d");
-      overlayCtx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+  
+    const overlayCanvas = overlayCanvasRef.current;
+    if (overlayCanvas) {
+      const overlayCtx = overlayCanvas.getContext("2d");
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     }
-  };
+  };  
 
   const sendMessage = (message) => {
     console.log("Message sent:", message);
+    // Implement actual WebSocket send logic if needed.
   };
 
-  // Return badge colors matching the detection type.
+  // Returns a badge color based on the detection type.
   const getBadgeColor = () => {
     switch (classification) {
       case "Bluetooth":
