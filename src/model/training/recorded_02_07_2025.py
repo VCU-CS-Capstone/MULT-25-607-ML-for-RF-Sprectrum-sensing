@@ -4,36 +4,36 @@ from torch import nn
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import h5py
+import multiprocessing
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Set the start method to 'spawn' to avoid CUDA initialization issues
+if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn", force=True)
 
-# %% CNN Architecture for Full Spectrum Analysis
+
+# CNN Architecture for Full Spectrum Analysis
 class SpectrumClassifier(nn.Module):
     def __init__(self):
         super().__init__()
         self.feature_extractor = nn.Sequential(
-            # Initial wide kernels for signal detection
-            nn.Conv1d(1, 64, kernel_size=51, padding=25),  # Detect 20MHz WiFi signals
+            nn.Conv1d(1, 64, kernel_size=51, padding=25),
             nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.MaxPool1d(4),
-            # Medium resolution features
-            nn.Conv1d(64, 128, kernel_size=25, padding=12),  # Detect BT frequency hops
+            nn.Conv1d(64, 128, kernel_size=25, padding=12),
             nn.BatchNorm1d(128),
             nn.ReLU(),
             nn.MaxPool1d(4),
-            # Fine-grained features
             nn.Conv1d(128, 256, kernel_size=11, padding=5),
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.AdaptiveAvgPool1d(1),
         )
-
         self.classifier = nn.Sequential(
             nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.5), nn.Linear(128, 1)
         )
-
         self._init_weights()
 
     def _init_weights(self):
@@ -53,48 +53,50 @@ class SpectrumClassifier(nn.Module):
         return self.classifier(x)
 
 
-# %% Dataset with Full Spectrum Processing
 class FullPSDDataset(Dataset):
     def __init__(self, file_path):
         self.file_path = file_path
         with h5py.File(file_path, "r") as f:
             self.keys = list(f.keys())
 
-        # dBm normalization parameters
-        self.psd_min = -80  # Minimum expected dBm
-        self.psd_max = -20  # Maximum expected dBm
+        # Normalization parameters
+        self.psd_min = -80
+        self.psd_max = -20
+
+        # Preload all data into GPU memory
+        self.data = []
+        self.labels = []
+        with h5py.File(file_path, "r") as f:
+            for key in self.keys:
+                # Load, normalize, and move to GPU
+                data = torch.tensor(f[key][:], dtype=torch.float32).unsqueeze(0)
+                data = (data - self.psd_min) / (self.psd_max - self.psd_min)
+                data = torch.clamp(data, 0, 1).to(device)
+
+                self.data.append(data)
+                self.labels.append(
+                    torch.tensor(0.0 if key.startswith("wifi") else 1.0, device=device)
+                )
 
     def __len__(self):
         return len(self.keys)
 
     def __getitem__(self, idx):
-        with h5py.File(self.file_path, "r") as f:
-            key = self.keys[idx]
-            # Load and normalize dBm values
-            data = torch.tensor(f[key][:], dtype=torch.float32).unsqueeze(0)
-            data = (data - self.psd_min) / (self.psd_max - self.psd_min)
-            data = torch.clamp(data, 0, 1)
-
-            label = 0.0 if key.startswith("wifi") else 1.0
-
-        return data, label
+        return self.data[idx], self.labels[idx]
 
 
-# %% Training Functions with Mixed Precision
+# Training/Testing Functions (No data movement needed)
 def train(model, loader, loss_fn, optimizer):
     model.train()
     total_loss = 0
-    scaler = torch.GradScaler("cuda")
+    scaler = torch.GradScaler()
 
     for samples, labels in tqdm(loader, desc="Training"):
-        samples = samples.to(device, non_blocking=True)
-        labels = labels.to(device, non_blocking=True).float().unsqueeze(1)
-
         optimizer.zero_grad()
 
         with torch.autocast(device_type="cuda", dtype=torch.float16):
             outputs = model(samples)
-            loss = loss_fn(outputs, labels)
+            loss = loss_fn(outputs, labels.unsqueeze(1))
 
         scaler.scale(loss).backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -111,28 +113,25 @@ def test(model, loader, loss_fn):
     total_loss, correct = 0, 0
     with torch.no_grad():
         for samples, labels in tqdm(loader, desc="Testing"):
-            samples = samples.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True).float().unsqueeze(1)
-
             outputs = model(samples)
-            loss = loss_fn(outputs, labels)
+            loss = loss_fn(outputs, labels.unsqueeze(1))
             total_loss += loss.item() * samples.size(0)
 
             preds = torch.sigmoid(outputs) > 0.5
-            correct += preds.eq(labels).sum().item()
+            correct += preds.eq(labels.unsqueeze(1)).sum().item()
 
     return (total_loss / len(loader.dataset)), (100 * correct / len(loader.dataset))
 
 
-# %% Main Execution
+# Main Execution
 if __name__ == "__main__":
     config = {
-        "batch_size": 1024,
-        "epochs": 5,
+        "batch_size": 4096,
+        "epochs": 8,
         "lr": 2e-4,
         "weight_decay": 1e-4,
         "model_path": "full_spectrum_classifier.pth",
-        "num_workers": 16,
+        "num_workers": 0,  # Disable multiprocessing
     }
 
     train_loader = DataLoader(
@@ -140,16 +139,12 @@ if __name__ == "__main__":
         batch_size=config["batch_size"],
         shuffle=True,
         num_workers=config["num_workers"],
-        pin_memory=True,
-        persistent_workers=True,
     )
 
     test_loader = DataLoader(
         FullPSDDataset("test.h5"),
         batch_size=config["batch_size"] * 2,
         num_workers=config["num_workers"],
-        pin_memory=True,
-        persistent_workers=True,
     )
 
     model = SpectrumClassifier().to(device)
@@ -187,7 +182,6 @@ if __name__ == "__main__":
             f"Test Acc: {test_acc:.1f}%"
         )
 
-    # Plot results
     plt.style.use("dark_background")
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
