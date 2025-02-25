@@ -1,10 +1,11 @@
-import torch
-import matplotlib.pyplot as plt
-from torch import nn
-from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
-import h5py
 import multiprocessing
+
+import h5py
+import matplotlib.pyplot as plt
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -18,6 +19,7 @@ class SpectrumClassifier(nn.Module):
     def __init__(self):
         super().__init__()
         self.feature_extractor = nn.Sequential(
+            # First layer looks for 2.5mhz; 100/2048 = 48.8kHz
             nn.Conv1d(1, 64, kernel_size=51, padding=25),
             nn.BatchNorm1d(64),
             nn.ReLU(),
@@ -60,8 +62,8 @@ class FullPSDDataset(Dataset):
             self.keys = list(f.keys())
 
         # Normalization parameters
-        self.psd_min = -80
-        self.psd_max = -20
+        self.psd_min = -100
+        self.psd_max = 0
 
         # Preload all data into GPU memory
         self.data = []
@@ -130,7 +132,7 @@ if __name__ == "__main__":
         "epochs": 8,
         "lr": 2e-4,
         "weight_decay": 1e-4,
-        "model_path": "full_spectrum_classifier.pth",
+        "model_path": "full_spectrum_classifier_0_100.pth",
         "num_workers": 0,  # Disable multiprocessing
     }
 
@@ -177,7 +179,7 @@ if __name__ == "__main__":
         test_accuracies.append(test_acc)
 
         print(
-            f"Epoch {epoch+1}/{config['epochs']}: "
+            f"Epoch {epoch + 1}/{config['epochs']}: "
             f"Train Loss: {train_loss:.4f}, "
             f"Test Acc: {test_acc:.1f}%"
         )
@@ -198,4 +200,4 @@ if __name__ == "__main__":
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
 
     plt.tight_layout()
-    plt.savefig("test.png")
+    plt.show("test.png")

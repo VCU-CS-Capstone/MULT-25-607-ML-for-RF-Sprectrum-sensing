@@ -17,6 +17,9 @@ importers:
       '@material-tailwind/react':
         specifier: 2.1.8
         version: 2.1.8(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      '@mui/icons-material':
+        specifier: ^6.4.5
+        version: 6.4.5(@mui/material@6.4.2(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(@types/react@19.0.8)(react@18.2.0)
       '@mui/material':
         specifier: ^6.2.1
         version: 6.4.2(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
@@ -29,6 +32,9 @@ importers:
       react-scripts:
         specifier: 5.0.1
         version: 5.0.1(@babel/plugin-syntax-flow@7.26.0(@babel/core@7.26.7))(@babel/plugin-transform-react-jsx@7.25.9(@babel/core@7.26.7))(@types/babel__core@7.20.5)(eslint@8.57.1)(react@18.2.0)(type-fest@0.21.3)(typescript@4.9.5)(webpack-cli@6.0.1)
+      react-use-websocket:
+        specifier: ^4.13.0
+        version: 4.13.0
     devDependencies:
       tailwindcss:
         specifier: 3.4.0
@@ -1097,6 +1103,17 @@ packages:
 
   '@mui/core-downloads-tracker@6.4.2':
     resolution: {integrity: sha512-Qmod9fHsFWrtLxdSkZ4iDLRz2AUKt3C2ZEimuY+qKlQGVKJDNS5DuSlNOAgqfHFDq8mzB17ATN6HFcThwJlvUw==}
+
+  '@mui/icons-material@6.4.5':
+    resolution: {integrity: sha512-4A//t8Nrc+4u4pbVhGarIFU98zpuB5AV9hTNzgXx1ySZJ1tWtx+i/1SbQ8PtGJxWeXlljhwimZJNPQ3x0CiIFw==}
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      '@mui/material': ^6.4.5
+      '@types/react': ^17.0.0 || ^18.0.0 || ^19.0.0
+      react: ^17.0.0 || ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
 
   '@mui/material@6.4.2':
     resolution: {integrity: sha512-9jKr53KbAJyyBRx8LRmX7ATXHlGtxVQdPgm1uyXMoEPMVkSJW1yO3vFgfYoDbGx4ZHcCNuWa4FkFIPWVt9fghA==}
@@ -4725,6 +4742,9 @@ packages:
       react: '>=16.6.0'
       react-dom: '>=16.6.0'
 
+  react-use-websocket@4.13.0:
+    resolution: {integrity: sha512-anMuVoV//g2N76Wxqvqjjo1X48r9Np3y1/gMl7arX84tAPXdy5R7sB5lO5hvCzQRYjqXwV8XMAiEBOUbyrZFrw==}
+
   react@18.2.0:
     resolution: {integrity: sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==}
     engines: {node: '>=0.10.0'}
@@ -7182,6 +7202,14 @@ snapshots:
       tslib: 2.8.1
 
   '@mui/core-downloads-tracker@6.4.2': {}
+
+  '@mui/icons-material@6.4.5(@mui/material@6.4.2(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(@types/react@19.0.8)(react@18.2.0)':
+    dependencies:
+      '@babel/runtime': 7.26.7
+      '@mui/material': 6.4.2(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      react: 18.2.0
+    optionalDependencies:
+      '@types/react': 19.0.8
 
   '@mui/material@6.4.2(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react@18.2.0))(@types/react@19.0.8)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)':
     dependencies:
@@ -11470,6 +11498,8 @@ snapshots:
       prop-types: 15.8.1
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
+
+  react-use-websocket@4.13.0: {}
 
   react@18.2.0:
     dependencies:

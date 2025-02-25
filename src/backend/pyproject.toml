@@ -1,0 +1,13 @@
+[project]
+name = "pythonsocks"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "h5py>=3.13.0",
+    "numpy>=2.2.3",
+    "snakeviz>=2.2.2",
+    "torch>=2.6.0",
+    "websockets>=15.0",
+]
