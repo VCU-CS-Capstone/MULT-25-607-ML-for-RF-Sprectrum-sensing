@@ -158,7 +158,7 @@ const Spectrogram = () => {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        height: "100vh",
+        height: "100%",
       }}
     >
       <Card sx={{ width: CANVAS_WIDTH + 40, padding: 2 }}>

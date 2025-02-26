@@ -5,10 +5,10 @@ import Spectrogram from "./components/Spectrogram";
 
 const App = () => {
   return (
-    <div>
-      <Header />
-      <Spectrogram />
-    </div>
+
+
+    <Spectrogram />
+
   );
 };
 
