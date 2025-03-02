@@ -1,11 +1,10 @@
-// Spectrogram.js
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { createSpectrogramDrawer } from "./utils/drawingUtils";
 import { generateColorMap } from "./utils/colorMap";
-import { Card, CardContent, Button, Box, Typography } from "@mui/material";
+import { Box, Card, CardContent, Typography, Button, Slider } from '@mui/material';
 
-const CANVAS_WIDTH = 1024;
-const CANVAS_HEIGHT = 600;
+const CANVAS_WIDTH = 2048;
+const CANVAS_HEIGHT = 1024;
 const WEBSOCKET_URL = "ws://localhost:3030";
 
 const DetectionType = {
@@ -39,6 +38,12 @@ const Spectrogram = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [currentDetection, setCurrentDetection] = useState("None");
   const [detectionRange, setDetectionRange] = useState({ start: 0, end: 0 });
+  const lastUsedRangeRef = useRef([-110, -70]);
+  const [rangeDbm, setRangeDbm] = useState(lastUsedRangeRef.current);
+  const handleRangeChange = (_, newValue) => {
+    setRangeDbm(newValue);
+    lastUsedRangeRef.current = newValue; // Keep ref in sync
+  };
 
   // Generate color map
   const colorMap = useMemo(() => generateColorMap(), []);
@@ -49,7 +54,7 @@ const Spectrogram = () => {
       spectrogramDrawerRef.current = createSpectrogramDrawer(
         canvasRef.current,
         colorMap,
-        setError,
+        setError
       );
 
       return () => {
@@ -58,7 +63,16 @@ const Spectrogram = () => {
     }
   }, [colorMap]);
 
-  // WebSocket message handler
+  useEffect(() => {
+    if (spectrogramDrawerRef.current) {
+      // Use the ref to prevent unnecessary updates
+      spectrogramDrawerRef.current.updateRange(lastUsedRangeRef.current)
+        .catch((error) => {
+          console.error("Failed to update range:", error);
+        });
+    }
+  }, [rangeDbm]);
+
   const handleWebSocketMessage = (event) => {
     try {
       const data = JSON.parse(event.data);
@@ -75,8 +89,12 @@ const Spectrogram = () => {
       setCurrentDetection(getDetectionLabel(detectionType));
       setDetectionRange({ start: startIndex, end: endIndex });
 
-      // Draw the spectrogram
-      spectrogramDrawerRef.current?.draw(psdData, 0, [startIndex, endIndex]).catch((error) => {
+      // Use the ref's value to ensure consistency
+      spectrogramDrawerRef.current?.draw(
+        psdData,
+        lastUsedRangeRef.current, // Use ref instead of state to ensure latest value
+        [startIndex, endIndex]
+      ).catch((error) => {
         console.error("Failed to draw spectrogram:", error);
         setError("Drawing error occurred");
       });
@@ -164,6 +182,7 @@ const Spectrogram = () => {
       <Card sx={{ width: CANVAS_WIDTH + 40, padding: 2 }}>
         <CardContent>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {/* Spectrogram Canvas */}
             <Box sx={{ display: "flex", justifyContent: "center" }}>
               <canvas
                 ref={canvasRef}
@@ -173,6 +192,26 @@ const Spectrogram = () => {
               />
             </Box>
 
+            {/* Signal Range Control */}
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="body2" gutterBottom>
+                Signal Range (dBm):
+              </Typography>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <Typography variant="caption">{rangeDbm[0]}</Typography>
+                <Slider
+                  value={rangeDbm}
+                  onChange={handleRangeChange}
+                  valueLabelDisplay="auto"
+                  min={-200}
+                  max={0}
+                  sx={{ flex: 1 }}
+                />
+                <Typography variant="caption">{rangeDbm[1]}</Typography>
+              </Box>
+            </Box>
+
+            {/* Connection Status */}
             <Box
               sx={{
                 display: "flex",
@@ -195,6 +234,7 @@ const Spectrogram = () => {
               </Typography>
             </Box>
 
+            {/* Control Buttons */}
             <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
               <Button
                 variant="contained"
@@ -215,9 +255,8 @@ const Spectrogram = () => {
               </Button>
             </Box>
 
-            <Box
-              sx={{ display: "flex", justifyContent: "space-between", mt: 1 }}
-            >
+            {/* Detection Information */}
+            <Box sx={{ display: "flex", justifyContent: "space-between", mt: 1 }}>
               <Typography variant="body2">
                 Detection: {currentDetection}
               </Typography>
@@ -228,6 +267,7 @@ const Spectrogram = () => {
               )}
             </Box>
 
+            {/* Error Messages */}
             {error && (
               <Typography variant="body2" color="error" sx={{ mt: 2 }}>
                 Error: {error}

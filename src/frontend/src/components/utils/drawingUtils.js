@@ -1,49 +1,100 @@
+// === DATA VALIDATION AND PROCESSING ===
+
 // Utility function to validate PSD data
 export const validatePSDData = (psd) => {
-  if (!Array.isArray(psd)) return false;
-  if (psd.length !== 2048) return false;
-  return true;
+  return Array.isArray(psd) && psd.length === 2048;
 };
 
-// Utility function to create image data from PSD values
+// Helper function to downsample PSD data
+export const downsamplePsd = (psd, targetWidth) => {
+  const step = Math.floor(psd.length / targetWidth);
+  const downsampled = new Array(targetWidth);
+
+  for (let i = 0; i < targetWidth; i++) {
+    let sum = 0;
+    const startIdx = i * step;
+    const endIdx = Math.min(startIdx + step, psd.length);
+
+    for (let j = startIdx; j < endIdx; j++) {
+      sum += psd[j];
+    }
+
+    downsampled[i] = sum / (endIdx - startIdx);
+  }
+
+  return downsampled;
+};
+
+// Helper function to scale detection indices to match downsampled data
+export const scaleDetections = (detections, originalLength, targetWidth) => {
+  // If both detection values are 0, return [0, 0]
+  if (detections[0] === 0 && detections[1] === 0) {
+    return [0, 0];
+  }
+
+  const scale = targetWidth / originalLength;
+  return [
+    Math.floor(detections[0] * scale),
+    Math.floor(detections[1] * scale)
+  ];
+};
+
+// === IMAGE AND CANVAS OPERATIONS ===
+
 export const createRowImageData = (
   width,
   downsampled,
   colorMap,
-  globalOffset,
-  detections,
-  minDbm = -110,
-  maxDbm = -70,
+  scaledDetections,
+  minDbm,
+  maxDbm,
 ) => {
-  const imgData = new ImageData(width, 1);
+  // Create a 2-pixel high row
+  const imgData = new ImageData(width, 2);
+  const data = imgData.data;
+  const dbmRange = maxDbm - minDbm;
+  const pointsToProcess = width / 2;
+  const [detStart, detEnd] = scaledDetections;
 
-  for (let i = 0; i < width; i++) {
-    // Normalize the dBm value to a float between 0 and 1.
-    // For example, -180 maps to 0 and -40 maps to 1.
-    const normalized = (downsampled[i] - minDbm) / (maxDbm - minDbm);
-    // Clamp normalized value between 0 and 1 (in case of out-of-bound values).
-    const clampedNormalized = Math.max(0, Math.min(1, normalized));
-    // Convert normalized value to an intensity in the range [0, 255].
-    const baseIntensity = Math.floor(clampedNormalized * 255);
+  for (let i = 0; i < pointsToProcess; i++) {
+    // Calculate normalized value more efficiently
+    const normalized = Math.max(0, Math.min(1, (downsampled[i] - minDbm) / dbmRange));
+    const colorIdx = Math.min(255, Math.floor(normalized * 255));
 
-    let offset = globalOffset;
+    // Get color once
+    const [r, g, b, a] = colorMap[colorIdx] || [0, 0, 0, 255];
+    const alpha = (detStart < i && detEnd > i) ? a : a / 2;
 
+    // Calculate base indices for the 2x2 pixel block
+    const baseIdx1 = (i * 2) * 4;
+    const baseIdx2 = baseIdx1 + 4;
+    const baseIdx3 = width * 4 + baseIdx1;
+    const baseIdx4 = width * 4 + baseIdx2;
 
-    // Add offset and clamp intensity to [0, 255].
-    const clampedIntensity = Math.max(0, Math.min(255, baseIntensity + offset));
-    const colorEntry = colorMap[clampedIntensity] || [0, 0, 0, 255];
-    const [r, g, b, a] = colorEntry;
+    // Set all 4 pixels more efficiently
+    // Top left pixel
+    data[baseIdx1] = r;
+    data[baseIdx1 + 1] = g;
+    data[baseIdx1 + 2] = b;
+    data[baseIdx1 + 3] = alpha;
 
-    // Set pixel values in the image data.
-    const idx = i * 4;
-    imgData.data[idx] = r;
-    imgData.data[idx + 1] = g;
-    imgData.data[idx + 2] = b;
-    if (detections[0] < i & detections[1] > i) {
-      imgData.data[idx + 3] = a;
-    } else {
-      imgData.data[idx + 3] = a / 2;
-    }
+    // Top right pixel
+    data[baseIdx2] = r;
+    data[baseIdx2 + 1] = g;
+    data[baseIdx2 + 2] = b;
+    data[baseIdx2 + 3] = alpha;
+
+    // Bottom left pixel
+    data[baseIdx3] = r;
+    data[baseIdx3 + 1] = g;
+    data[baseIdx3 + 2] = b;
+    data[baseIdx3 + 3] = alpha;
+
+    // Bottom right pixel
+    data[baseIdx4] = r;
+    data[baseIdx4 + 1] = g;
+    data[baseIdx4 + 2] = b;
+    data[baseIdx4 + 3] = alpha;
   }
 
   return imgData;
@@ -52,7 +103,7 @@ export const createRowImageData = (
 // Utility function to shift image data up
 export const shiftImageUp = (ctx, width, height) => {
   try {
-    const image = ctx.getImageData(0, 1, width, height - 1);
+    const image = ctx.getImageData(0, 2, width, height - 2);
     ctx.putImageData(image, 0, 0);
     return true;
   } catch (error) {
@@ -61,13 +112,20 @@ export const shiftImageUp = (ctx, width, height) => {
   }
 };
 
+export const clearCanvas = (ctx, width, height) => {
+  ctx.clearRect(0, 0, width, height);
+};
+
+// === MAIN DRAWING FUNCTIONS ===
+
 // Main drawing function
 export const drawSpectrogram = ({
   canvas,
   psd,
   colorMap,
-  globalOffset,
   detections,
+  minDbm,
+  maxDbm,
   onError = () => { },
   drawTimeout = null,
   setDrawTimeout = () => { },
@@ -86,41 +144,40 @@ export const drawSpectrogram = ({
         return;
       }
 
-      // Setup canvas context
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      const width = canvas.width;
-      const height = canvas.height;
-      const psdToCanvasFactor = psd.length / width;
-
       // Check if previous draw is still in progress
       if (drawTimeout) {
         resolve();
         return;
       }
 
+      // Setup canvas context
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const width = canvas.width;
+      const height = canvas.height;
+
       // Schedule drawing
       setDrawTimeout(
         requestAnimationFrame(() => {
-          // Downsample PSD data to match canvas width
-          const downsampled = downsamplePsd(psd, width);
-
-          // Create image data for new row
+          // Downsample PSD data to half the canvas width (since we're using 2x2 pixels)
+          const pointsToDisplay = Math.floor(width / 2);
+          const downsampled = downsamplePsd(psd, pointsToDisplay);
+          const scaledDetections = scaleDetections(detections, psd.length, pointsToDisplay);
           const imgData = createRowImageData(
             width,
             downsampled,
             colorMap,
-            globalOffset,
-            detections,
+            scaledDetections,
+            minDbm,
+            maxDbm,
           );
 
           // Shift existing image up
-          const shiftSuccess = shiftImageUp(ctx, width, height);
-          if (!shiftSuccess) {
+          if (!shiftImageUp(ctx, width, height)) {
             onError("Error shifting image data");
           }
 
           // Draw new row at the bottom
-          ctx.putImageData(imgData, 0, height - 1);
+          ctx.putImageData(imgData, 0, height - 2);
 
           // Clear timeout and resolve
           setDrawTimeout(null);
@@ -135,36 +192,62 @@ export const drawSpectrogram = ({
   });
 };
 
-// Helper function to downsample PSD data
-export const downsamplePsd = (psd, targetWidth) => {
-  const step = Math.floor(psd.length / targetWidth);
-  const downsampled = [];
-
-  for (let i = 0; i < targetWidth; i++) {
-    const segment = psd.slice(i * step, (i + 1) * step);
-    const avg = segment.reduce((a, b) => a + b, 0) / step;
-    downsampled.push(avg);
-  }
-
-  return downsampled;
-};
-
-export const clearCanvas = (ctx, width, height) => {
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 0, width, height);
-};
-
-export const createSpectrogramDrawer = (canvas, colorMap, onError, lowerDbm, upperDbm) => {
+export const createSpectrogramDrawer = (canvas, colorMap, onError) => {
   let currentDrawTimeout = null;
+  let psdHistory = [];
+  let detectionHistory = [];
+  let lastRangeDbm = [-110, -70]; // Default range
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const maxHistorySize = canvas.height / 2; // Each row is 2px high
 
-  const draw = (psd, globalOffset, detections,) => {
+  const redrawFullCanvas = (rangeDbm) => {
+    clearCanvas(ctx, canvas.width, canvas.height);
+
+    // Process each row of history from oldest to newest
+    for (let i = 0; i < psdHistory.length; i++) {
+      const psd = psdHistory[i];
+      const detections = detectionHistory[i];
+
+      // Calculate position from bottom (newest data at bottom)
+      const y = canvas.height - ((psdHistory.length - i) * 2);
+      if (y < 0) continue; // Skip if it would be drawn outside the canvas
+
+      // Downsample and create row image data
+      const pointsToDisplay = Math.floor(canvas.width / 2);
+      const downsampled = downsamplePsd(psd, pointsToDisplay);
+      const scaledDetections = scaleDetections(detections, psd.length, pointsToDisplay);
+      const imgData = createRowImageData(
+        canvas.width,
+        downsampled,
+        colorMap,
+        scaledDetections,
+        rangeDbm[0],
+        rangeDbm[1]
+      );
+
+      // Draw directly at the calculated position
+      ctx.putImageData(imgData, 0, y);
+    }
+  };
+
+  const draw = (psd, rangeDbm, detections) => {
+    // Update histories
+    psdHistory.push(psd);
+    detectionHistory.push(detections);
+    if (psdHistory.length > maxHistorySize) {
+      psdHistory.shift();
+      detectionHistory.shift();
+    }
+
+    lastRangeDbm = rangeDbm;
+
     return drawSpectrogram({
       canvas,
       psd,
       colorMap,
-      globalOffset,
       detections,
+      minDbm: rangeDbm[0],
+      maxDbm: rangeDbm[1],
       onError,
       drawTimeout: currentDrawTimeout,
       setDrawTimeout: (timeout) => {
@@ -173,8 +256,27 @@ export const createSpectrogramDrawer = (canvas, colorMap, onError, lowerDbm, upp
     });
   };
 
+  const updateRange = (rangeDbm) => {
+    // Cancel any pending draw
+    if (currentDrawTimeout) {
+      cancelAnimationFrame(currentDrawTimeout);
+      currentDrawTimeout = null;
+    }
+
+    lastRangeDbm = rangeDbm;
+
+    // Immediately redraw the entire canvas with the new range
+    if (psdHistory.length > 0) {
+      redrawFullCanvas(rangeDbm);
+    }
+
+    return Promise.resolve();
+  };
+
   const clear = () => {
     clearCanvas(ctx, canvas.width, canvas.height);
+    psdHistory = [];
+    detectionHistory = [];
   };
 
   const cleanup = () => {
@@ -182,10 +284,13 @@ export const createSpectrogramDrawer = (canvas, colorMap, onError, lowerDbm, upp
       cancelAnimationFrame(currentDrawTimeout);
       currentDrawTimeout = null;
     }
+    psdHistory = [];
+    detectionHistory = [];
   };
 
   return {
     draw,
+    updateRange,
     clear,
     cleanup,
   };
