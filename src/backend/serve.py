@@ -1,303 +1,316 @@
 import asyncio
 import json
 import re
-import uhd
-import h5py
 import numpy as np
 import torch
-import torch.nn as nn
 import websockets.asyncio.server
 import websockets.exceptions
+from MLRF.sources import H5DataSource
 from websockets.asyncio.server import serve
+from dotenv import load_dotenv
+import os
+import argparse
+import joblib
+from scipy import signal as scipy_signal
+import sys
+
+# Load environment variables from .env file
+load_dotenv()
 
 
-class USRPDataSource:
-    def __init__(
-        self,
-        center_freq=2.45e9,
-        num_samps=1024,
-        sample_rate=50e6,
-        bandwidth=50e6,
-        gain=80,
-        buffer_size=0.1,
-    ):
-        """
-        Initialize the USRP data source with configurable parameters
+class RFClassifier:
+    """RF Signal Classifier for WiFi vs Bluetooth with feature extraction"""
 
-        Args:
-            center_freq: Center frequency in Hz
-            num_samps: Number of samples to collect
-            sample_rate: Sample rate in Hz (reduced default)
-            bandwidth: Bandwidth in Hz (reduced default)
-            gain: Receiver gain (reduced default)
-            buffer_size: Buffer size in seconds
-        """
-        # Store parameters as instance attributes
+    def __init__(self, model, feature_method="spectral_shape"):
+        self.model = model
+        self.feature_method = feature_method
+        # Define expected signal characteristics
+        self.wifi_width = 410  # ~20MHz in bins
+        self.bt_width = 20  # ~1MHz in bins
 
-        self.center_freq = center_freq
-        self.num_samps = num_samps
-        self.sample_rate = sample_rate
-        self.bandwidth = bandwidth
-        self.gain = gain
-        try:
-            import uhd
+    def extract_features(self, X):
+        """Extract features from raw PSD data"""
+        # For real-time/single sample processing
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
 
-            self.uhd = uhd  # Store module reference
-            self.usrp = uhd.usrp.MultiUSRP()
+        return self._extract_spectral_shape_features_direct(X)
 
-            # Use lower sample rate to prevent overflows
-            self.usrp.set_rx_rate(sample_rate, 0)
-            self.usrp.set_rx_freq(uhd.libpyuhd.types.tune_request(center_freq), 0)
-            self.usrp.set_rx_bandwidth(bandwidth, 0)
-            self.usrp.set_rx_agc(True, 0)
-            # self.usrp.set_rx_gain(gain, 0)
+    def _extract_spectral_shape_features_direct(self, X):
+        """Direct feature extraction for small batches or single samples"""
+        features = []
 
-            # Set up the stream with larger buffer
-            self.st_args = uhd.usrp.StreamArgs("fc32", "sc16")
-            self.st_args.channels = [0]
+        for i in range(X.shape[0]):
+            signal = X[i]
+            feature_vector = []
 
-            # Calculate buffer size in samples
-            self.buffer_size_samps = int(sample_rate * buffer_size)
+            # Find peaks
+            peaks, properties = scipy_signal.find_peaks(
+                signal, height=np.median(signal), distance=self.bt_width // 2
+            )
 
-            # Set stream args with appropriate buffer size
-            self.st_args.args = f"num_recv_frames={max(8, self.buffer_size_samps // 1024)},recv_frame_size=1024"
-            self.streamer = self.usrp.get_rx_stream(self.st_args)
+            if len(peaks) == 0:
+                peak_widths = [0]
+                peak_heights = [0]
+                peak_prominences = [0]
+            else:
+                # Calculate widths at different levels
+                widths_3db = scipy_signal.peak_widths(signal, peaks, rel_height=0.5)[0]
+                widths_6db = scipy_signal.peak_widths(signal, peaks, rel_height=0.75)[0]
+                widths_10db = scipy_signal.peak_widths(signal, peaks, rel_height=0.9)[0]
 
-            # Maximum chunk size to read from USRP at once
-            self.chunk_size = min(1024, self.num_samps)
+                peak_heights = properties["peak_heights"]
+                peak_prominences = scipy_signal.peak_prominences(signal, peaks)[0]
 
-            self.initialized = True
-        except ImportError:
-            print("Warning: UHD module not found. USRP functionality will be limited.")
-            self.uhd = None
-            self.usrp = None
-            self.initialized = False
+            # Calculate features
+            if len(peaks) > 0:
+                bt_like_peaks = np.sum(
+                    (widths_3db > 5) & (widths_3db < self.bt_width * 2)
+                )
+                wifi_like_peaks = np.sum(
+                    (widths_3db > self.bt_width * 2)
+                    & (widths_3db < self.wifi_width * 1.5)
+                )
+                wide_peaks = np.sum(widths_3db > self.wifi_width)
 
-    def set_center_freq(self, center_freq):
-        """Update the center frequency of the SDR"""
-        if self.initialized:
-            self.center_freq = center_freq
-            self.usrp.set_rx_freq(self.uhd.libpyuhd.types.tune_request(center_freq), 0)
-            return True
-        return False
+                width_height_ratios = widths_3db / peak_heights
 
-    def receive_iq_data(self, center_freq=None):
-        """
-        Receive IQ data from the USRP with overflow protection
+                feature_vector.extend(
+                    [
+                        len(peaks),
+                        np.mean(widths_3db) if len(widths_3db) > 0 else 0,
+                        np.std(widths_3db) if len(widths_3db) > 0 else 0,
+                        np.mean(widths_6db) if len(widths_6db) > 0 else 0,
+                        np.std(widths_6db) if len(widths_6db) > 0 else 0,
+                        np.mean(widths_10db) if len(widths_10db) > 0 else 0,
+                        np.std(widths_10db) if len(widths_10db) > 0 else 0,
+                        bt_like_peaks,
+                        wifi_like_peaks,
+                        wide_peaks,
+                        (
+                            np.mean(width_height_ratios)
+                            if len(width_height_ratios) > 0
+                            else 0
+                        ),
+                        (
+                            np.max(width_height_ratios)
+                            if len(width_height_ratios) > 0
+                            else 0
+                        ),
+                    ]
+                )
 
-        Args:
-            center_freq: Optional center frequency override
-        """
-        if center_freq is not None:
-            self.set_center_freq(center_freq)
-
-        if not self.initialized:
-            return np.zeros(self.num_samps, dtype=np.complex64)
-
-        # Create metadata and receive buffer
-        metadata = self.uhd.types.RXMetadata()
-        recv_buffer = np.zeros((1, self.chunk_size), dtype=np.complex64)
-        samples = np.zeros(self.num_samps, dtype=np.complex64)
-
-        # Configure stream command for a single burst
-        stream_cmd = self.uhd.types.StreamCMD(self.uhd.types.StreamMode.num_done)
-        stream_cmd.num_samps = self.num_samps
-        stream_cmd.stream_now = True
-        self.streamer.issue_stream_cmd(stream_cmd)
-
-        # Receive Samples with proper error handling
-        num_rx_samps = 0
-        timeout = 3.0  # seconds
-
-        while num_rx_samps < self.num_samps:
-            samples_to_recv = min(self.chunk_size, self.num_samps - num_rx_samps)
-
-            try:
-                rx_samps = self.streamer.recv(recv_buffer, metadata, timeout)
-
-                if metadata.error_code != self.uhd.types.RXMetadataErrorCode.none:
-                    # Handle the error based on the error code
-                    if (
-                        metadata.error_code
-                        == self.uhd.types.RXMetadataErrorCode.overflow
-                    ):
-                        print("O", end="", flush=True)  # Indicate overflow
-                    else:
-                        print(f"Error: {metadata.error_code}")
-                    continue
-
-                if rx_samps == 0:
-                    print("Timeout")
-                    break
-
-                samples[num_rx_samps : num_rx_samps + rx_samps] = recv_buffer[0][
-                    :rx_samps
+                # Width histogram
+                width_bins = [
+                    0,
+                    self.bt_width / 2,
+                    self.bt_width,
+                    self.bt_width * 2,
+                    self.wifi_width / 2,
+                    self.wifi_width,
+                    self.wifi_width * 1.5,
+                    2048,
                 ]
-                num_rx_samps += rx_samps
+                width_hist, _ = np.histogram(widths_3db, bins=width_bins)
+                feature_vector.extend(width_hist)
 
-            except Exception as e:
-                print(f"Error receiving samples: {e}")
-                break
+                # Top 3 peak widths
+                peak_indices = np.argsort(peak_prominences)[-3:]
+                top_widths = [
+                    widths_3db[i] if i < len(widths_3db) else 0 for i in peak_indices
+                ]
+                feature_vector.extend(top_widths)
+            else:
+                feature_vector.extend([0] * 12)  # Basic width statistics
+                feature_vector.extend([0] * 7)  # Width histogram
+                feature_vector.extend([0] * 3)  # Top peak widths
 
-        return samples
+            # Energy distribution
+            bt_energy = []
+            wifi_energy = []
 
-    @staticmethod
-    def calculate_psd(x, center_freq):
-        N = 2048
-        Fs = 50e6
-        x = x * np.hamming(len(x))  # apply a Hamming window
-        PSD = np.abs(np.fft.fft(x)) ** 2 / (N * Fs)
-        PSD_log = 10.0 * np.log10(PSD)  # Add small constant to prevent log(0)
-        PSD_shifted = np.fft.fftshift(PSD_log)
+            for start in range(0, len(signal) - self.wifi_width, self.wifi_width // 4):
+                if start + self.wifi_width <= len(signal):
+                    wifi_window = signal[start : start + self.wifi_width]
+                    wifi_energy.append(np.sum(10 ** (wifi_window / 10)))
 
-        f = np.arange(
-            Fs / -1, Fs, Fs / (N / 2)
-        )  # start, stop, step.  centered around 0 Hz
-        f += center_freq  # now add center frequency
-        return (PSD_shifted, f)
+            for start in range(0, len(signal) - self.bt_width, self.bt_width // 2):
+                if start + self.bt_width <= len(signal):
+                    bt_window = signal[start : start + self.bt_width]
+                    bt_energy.append(np.sum(10 ** (bt_window / 10)))
 
-    def get_next_data(self):
-        """Get the next data point from USRP"""
-        # Implementation for getting data from USRP would go here
-        # This is a placeholder
-        iq_data = self.receive_iq_data(center_freq=2.425e9)
-        iq_data_2 = self.receive_iq_data(center_freq=2.475e9)
+            feature_vector.extend(
+                [
+                    np.max(wifi_energy) if wifi_energy else 0,
+                    np.std(wifi_energy) if wifi_energy else 0,
+                    np.max(bt_energy) if bt_energy else 0,
+                    np.std(bt_energy) if bt_energy else 0,
+                    (
+                        np.max(wifi_energy) / np.max(bt_energy)
+                        if wifi_energy and bt_energy and np.max(bt_energy) > 0
+                        else 0
+                    ),
+                ]
+            )
 
-        iq_data_total = np.concatenate((iq_data, iq_data_2))
-        psd_data, _ = self.calculate_psd(iq_data_total, center_freq=2.45e9)
-        return psd_data
+            # Template correlation
+            x = np.linspace(-10, 10, self.wifi_width)
+            wifi_template = np.exp(-0.5 * x**2 / 9)
 
-    def reset(self):
-        """Reset the data source"""
-        pass
+            x = np.linspace(-10, 10, self.bt_width)
+            bt_template = np.exp(-0.5 * x**2)
 
-    def close(self):
-        """Close the USRP connection"""
-        self.usrp = None
+            wifi_corr = []
+            bt_corr = []
 
+            for start in range(0, len(signal) - self.wifi_width, self.wifi_width // 2):
+                if start + self.wifi_width <= len(signal):
+                    window_signal = signal[start : start + self.wifi_width]
+                    if np.std(window_signal) > 0:
+                        corr = np.corrcoef(window_signal, wifi_template)[0, 1]
+                        wifi_corr.append(corr)
 
-class H5DataSource:
-    def __init__(self, filename="data.h5"):
-        self.filename = filename
-        self.current_idx = 0
+            for start in range(0, len(signal) - self.bt_width, self.bt_width // 2):
+                if start + self.bt_width <= len(signal):
+                    window_signal = signal[start : start + self.bt_width]
+                    if np.std(window_signal) > 0:
+                        corr = np.corrcoef(window_signal, bt_template)[0, 1]
+                        bt_corr.append(corr)
 
-        # Initialize H5 file
-        self.h5_file = h5py.File(self.filename, "r")
+            feature_vector.extend(
+                [
+                    np.max(wifi_corr) if wifi_corr else 0,
+                    np.mean(wifi_corr) if wifi_corr else 0,
+                    np.max(bt_corr) if bt_corr else 0,
+                    np.mean(bt_corr) if bt_corr else 0,
+                ]
+            )
 
-        # Get dataset keys and sort them numerically
-        dataset_keys = [
-            k for k in self.h5_file.keys() if isinstance(self.h5_file[k], h5py.Dataset)
-        ]
-        self.keys = sorted(dataset_keys, key=lambda x: int(x))
-        self.total_keys = len(self.keys)
-        self.initialized = True
+            # Statistical features
+            feature_vector.extend(
+                [
+                    np.mean(signal),
+                    np.std(signal),
+                    np.max(signal),
+                    np.min(signal),
+                    np.median(signal),
+                    np.percentile(signal, 25),
+                    np.percentile(signal, 75),
+                ]
+            )
 
-    def get_next_data(self):
-        """Get the next data point from the H5 file"""
-        if not self.total_keys:
-            return np.array([])
+            features.append(feature_vector)
 
-        current_key = self.keys[self.current_idx]
-        data = self.h5_file[current_key][()]
+        return np.array(features)
 
-        # Move to next dataset circularly
-        self.current_idx = (self.current_idx + 1) % self.total_keys
+    def predict(self, X, noise_floor=-190.0):
+        """Predict WiFi (0) or Bluetooth (1) from raw PSD data"""
+        # Replace -inf values with noise floor - 10
+        X_clean = X.copy()
+        X_clean[X_clean == -np.inf] = noise_floor - 10
 
-        return data
+        # Extract features
+        X_features = self.extract_features(X_clean)
 
-    def reset(self):
-        """Reset the data source"""
-        self.current_idx = 0
-
-    def close(self):
-        """Close the H5 file"""
-        if self.h5_file:
-            self.h5_file.close()
-            self.h5_file = None
-
-
-class SpectrumClassifier(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.feature_extractor = nn.Sequential(
-            nn.Conv1d(1, 64, kernel_size=51, padding=25),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.MaxPool1d(4),
-            nn.Conv1d(64, 128, kernel_size=25, padding=12),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-            nn.MaxPool1d(4),
-            nn.Conv1d(128, 256, kernel_size=11, padding=5),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool1d(1),
-        )
-        self.classifier = nn.Sequential(
-            nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.5), nn.Linear(128, 1)
-        )
-        self._init_weights()
-
-    def _init_weights(self):
-        """Initialize weights for Conv1d and Linear layers."""
-        for m in self.modules():
-            if isinstance(m, nn.Conv1d):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        x = self.feature_extractor(x)
-        x = x.view(x.size(0), -1)
-        return self.classifier(x)
+        # Make prediction
+        return self.model.predict(X_features)
 
 
-torch.serialization.add_safe_globals([SpectrumClassifier])
+# Data source factory
+def create_data_source(source_type, data_path=None):
+    """Create appropriate data source based on type"""
+    if source_type.lower() == "h5":
+        if not data_path:
+            raise ValueError("H5 data source requires a data_path")
+        return H5DataSource(data_path)
+    elif source_type.lower() == "sdr":
+        # Import only if SDR source is requested
+        try:
+            from MLRF.sources import USRPDataSource
 
-
-def get_torch_device():
-    if torch.cuda.is_available():
-        device = "cuda"
-    elif torch.backends.mps.is_available():
-        device = "mps"
+            return USRPDataSource()
+        except ImportError:
+            print(
+                "Error: USRPDataSource not available. Make sure USRP libraries are installed."
+            )
+            sys.exit(1)
     else:
-        device = "cpu"
-    return device
+        raise ValueError(f"Unknown source type: {source_type}. Use 'h5' or 'sdr'")
 
 
-device = get_torch_device()
-model = torch.load("MLRF_1.1.pth", map_location=device, weights_only=False)
-model.eval()
+def event_detector(PSD, threshold_factor=1.05**-1):
+    """
+    Detect events in PSD data where signal exceeds a threshold relative to the signal mean
+    """
+    window_size = 64
+    event_ranges = []
+    in_event = False
+    start_idx = 0
+
+    # Calculate mean of the entire PSD
+    signal_mean = np.mean(PSD)
+
+    # Set threshold relative to the mean
+    dynamic_threshold = signal_mean * threshold_factor
+
+    i = 0
+    while i < len(PSD) - window_size + 1:
+        window = PSD[i : i + window_size]
+        window_average = round(sum(window) / window_size, 2)
+
+        if window_average > dynamic_threshold and not in_event:
+            start_idx = i
+            in_event = True
+            i += window_size
+        elif window_average <= dynamic_threshold and in_event:
+            event_ranges.append((start_idx, i - 1))
+            in_event = False
+            i += window_size
+        else:
+            i += window_size
+
+    if in_event:
+        event_ranges.append((start_idx, len(PSD) - 1))
+    elif not event_ranges:  # Only add (0,0) if no events were found
+        event_ranges.append((0, 0))
+
+    return event_ranges
 
 
-def run_inference(data: np.ndarray, min, max) -> int:
-    PSD_MIN = min
-    PSD_MAX = max
+def run_inference(model, data: np.ndarray) -> int:
+    """
+    Run inference with ML classifier
+
+    Args:
+        model: Loaded ML model (RFClassifier)
+        data: Input spectrum data (raw values)
+
+    Returns:
+        Classification result: 0 for WiFi, 1 for Bluetooth
+    """
     data = np.array(data, dtype=np.float32)
-    data = np.clip(data, PSD_MIN, PSD_MAX)
-    data = (data - PSD_MIN) / (PSD_MAX - PSD_MIN)
-    tensor = torch.tensor(data, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-    tensor = tensor.to(device)
 
-    with torch.no_grad():
-        output = model(tensor)
-        prob = torch.sigmoid(output).item()
-    return 1 if prob > 0.5 else 0
+    if os.getenv("DEBUG") == "True":
+        print(f"Data range before inference: {np.min(data):.2f} to {np.max(data):.2f}")
+
+    # Run inference with the ML model
+    result = model.predict(data)[0]
+
+    if os.getenv("DEBUG") == "True":
+        print(f"Classification result: {'Bluetooth' if result == 1 else 'WiFi'}")
+
+    return int(result)
 
 
-async def handle_client(websocket: websockets.asyncio.server.ServerConnection) -> None:
-    target_hz = 30  # Set your desired frequency here (e.g., 30 Hz)
+async def handle_client(websocket, model, target_hz, source_type, data_path):
+    """Handle WebSocket client connection"""
     target_period = 1.0 / target_hz  # Calculate period in seconds
     print(f"Client connected. Target frequency: {target_hz} Hz")
     if websocket.request and websocket.request.headers:
         print(f"Origin: {websocket.request.headers.get('Origin')}")
 
     # Initialize data source
-    data_source = USRPDataSource()
+    data_source = create_data_source(source_type, data_path)
 
     # Pre-allocate arrays for better performance
     detection_metrics = np.zeros(3, dtype=np.float32)
@@ -318,12 +331,16 @@ async def handle_client(websocket: websockets.asyncio.server.ServerConnection) -
             detections = event_detector(data)
             detection = 0
             if detections != [(0, 0)]:
-                detection = run_inference(data, np.min(data), np.max(data))
+                # Run inference
+                detection = run_inference(model, data)
                 detection += 1
-                if detection == 1:
-                    print("wifi")
-                elif detection == 2:
-                    print("bluetooth")
+
+                # Optional debug info
+                if os.getenv("DEBUG") == "True":
+                    signal_type = "WiFi" if detection == 1 else "Bluetooth"
+                    print(
+                        f"Detection: {signal_type}, Range: {np.min(data):.2f} to {np.max(data):.2f}"
+                    )
 
             # Prepare and send data
             detection_metrics[0] = detection
@@ -369,67 +386,91 @@ async def handle_client(websocket: websockets.asyncio.server.ServerConnection) -
         print("Closing WebSocket connection.")
 
 
-def event_detector(PSD, threshold_factor=1.05**-1):
-    """
-    Detect events in PSD data where signal exceeds a threshold relative to the signal mean
+async def run_server(host, port, model, target_hz, source_type, data_path):
+    """Run WebSocket server with the given configuration"""
+    trusted_origins_str = os.getenv("TRUSTED_ORIGINS", ".*")
+    trusted_origins = re.compile(trusted_origins_str)
 
-    Args:
-        PSD: Power Spectral Density data array
-        threshold_factor: Factor multiplied by mean to determine threshold (e.g., 1.5 = 50% above mean)
-
-    Returns:
-        List of tuples containing start and end indices of detected events
-    """
-    window_size = 64
-    event_ranges = []
-    in_event = False
-    start_idx = 0
-
-    # Calculate mean of the entire PSD
-    signal_mean = np.mean(PSD)
-
-    # Set threshold relative to the mean
-    dynamic_threshold = signal_mean * threshold_factor
-
-    i = 0
-    while i < len(PSD) - window_size + 1:
-        window = PSD[i : i + window_size]
-        window_average = round(sum(window) / window_size, 2)
-
-        if window_average > dynamic_threshold and not in_event:
-            start_idx = i
-            in_event = True
-            i += window_size
-        elif window_average <= dynamic_threshold and in_event:
-            event_ranges.append((start_idx, i - 1))
-            in_event = False
-            i += window_size
-        else:
-            i += window_size
-
-    if in_event:
-        event_ranges.append((start_idx, len(PSD) - 1))
-    elif not event_ranges:  # Only add (0,0) if no events were found
-        event_ranges.append((0, 0))
-
-    return event_ranges
-
-
-async def main():
-    trusted_origins = re.compile(r".*")
     async with serve(
-        handle_client,
-        "0.0.0.0",
-        3030,
+        lambda ws: handle_client(ws, model, target_hz, source_type, data_path),
+        host,
+        port,
         origins=[trusted_origins],
     ):
-        print("Server started. Press Ctrl+C to stop.")
-        print(f"Using device: {get_torch_device()}")
+        print(f"Server started on {host}:{port}")
+        print(f"Using source: {source_type}")
+        if source_type.lower() == "h5":
+            print(f"Data path: {data_path}")
+        print(f"Target frequency: {target_hz} Hz")
+        print("Press Ctrl+C to stop.")
         await asyncio.Future()
 
 
-if __name__ == "__main__":
+def parse_args():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description="RF Signal Classification Server")
+    parser.add_argument("--port", type=int, default=3030, help="WebSocket server port")
+    parser.add_argument(
+        "--host", type=str, default="0.0.0.0", help="WebSocket server host"
+    )
+    parser.add_argument(
+        "--model", type=str, required=True, help="Path to saved model file"
+    )
+    parser.add_argument(
+        "--hz", type=int, default=30, help="Target update frequency in Hz"
+    )
+    parser.add_argument(
+        "--source",
+        type=str,
+        choices=["h5", "sdr"],
+        default="h5",
+        help="Data source type (h5 or sdr)",
+    )
+    parser.add_argument("--data_path", type=str, help="Path to H5 file for h5 source")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    return parser.parse_args()
+
+
+def main():
+    """Main entry point with command line argument handling"""
+    args = parse_args()
+
+    # Set DEBUG environment variable if --debug was provided
+    if args.debug:
+        os.environ["DEBUG"] = "True"
+
+    # Validate args
+    if args.source.lower() == "h5" and not args.data_path:
+        print("Error: --data_path is required when using h5 source")
+        sys.exit(1)
+
+    # Load model
+    print(f"Loading model from: {args.model}")
     try:
-        asyncio.run(main())
+        # Check if model is a standalone model or a RFClassifier
+        loaded_obj = joblib.load(args.model)
+
+        if isinstance(loaded_obj, RFClassifier):
+            model = loaded_obj
+            print("Loaded RFClassifier model")
+        else:
+            # Create RFClassifier with the loaded model
+            model = RFClassifier(loaded_obj, feature_method="spectral_shape")
+            print("Loaded ML model and wrapped in RFClassifier")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        sys.exit(1)
+
+    # Run the server
+    try:
+        asyncio.run(
+            run_server(
+                args.host, args.port, model, args.hz, args.source, args.data_path
+            )
+        )
     except KeyboardInterrupt:
         print("KeyboardInterrupt received: shutting down.")
+
+
+if __name__ == "__main__":
+    main()

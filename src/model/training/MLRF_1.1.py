@@ -209,7 +209,7 @@ if __name__ == "__main__":
         "epochs": 8,
         "lr": 2e-4,
         "weight_decay": 1e-4,
-        "model_path": "full_spectrum_classifier_multi.pth",
+        "model_path": "MLRF_1.1.pth",
         "num_workers": 0,  # Disable multiprocessing
     }
 

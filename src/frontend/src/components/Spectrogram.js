@@ -93,7 +93,8 @@ const Spectrogram = () => {
       spectrogramDrawerRef.current?.draw(
         psdData,
         lastUsedRangeRef.current, // Use ref instead of state to ensure latest value
-        [startIndex, endIndex]
+        [startIndex, endIndex],
+        detectionType,
       ).catch((error) => {
         console.error("Failed to draw spectrogram:", error);
         setError("Drawing error occurred");
@@ -194,7 +195,7 @@ const Spectrogram = () => {
 
             {/* Signal Range Control */}
             <Box sx={{ mt: 1 }}>
-              <Typography variant="body2" gutterBottom>
+              <Typography variant="body1" gutterBottom>
                 Signal Range (dBm):
               </Typography>
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -219,7 +220,7 @@ const Spectrogram = () => {
                 alignItems: "center",
               }}
             >
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body1" color="textSecondary">
                 Status: {isClearing ? "Clearing" : connectionStatus}
                 <span
                   style={{
@@ -257,11 +258,11 @@ const Spectrogram = () => {
 
             {/* Detection Information */}
             <Box sx={{ display: "flex", justifyContent: "space-between", mt: 1 }}>
-              <Typography variant="body2">
+              <Typography variant="body1">
                 Detection: {currentDetection}
               </Typography>
               {currentDetection !== "None" && (
-                <Typography variant="body2">
+                <Typography variant="body1">
                   Range: {detectionRange.start} - {detectionRange.end}
                 </Typography>
               )}

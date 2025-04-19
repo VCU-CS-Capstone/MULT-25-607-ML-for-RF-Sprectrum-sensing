@@ -3,15 +3,34 @@ name = "pythonsocks"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
-    "h5py>=3.13.0",
+    "dotenv>=0.9.9",
+    "joblib>=1.4.2",
     "matplotlib>=3.10.1",
-    "numpy>=2.2.3",
     "pyqt6>=6.8.1",
     "pyqtgraph>=0.13.7",
-    "scipy>=1.15.2",
     "snakeviz>=2.2.2",
-    "torch>=2.6.0",
     "websockets>=15.0",
+    "flake8>=7.1.2",
+    "h5py>=3.12.1",
+    "ipykernel",
+    "ipywidgets",
+    "lightgbm>=4.6.0",
+    "pandas>=2.2.3",
+    "plot>=0.6.5",
+    "pyqt5>=5.15.11",
+    "pyside2>=5.15.2.1",
+    "pyside6>=6.8.2.1",
+    "scikit-learn>=1.6.1",
+    "scipy>=1.14.1",
+    "seaborn>=0.13.2",
+    "torch>=2.5.1",
+    "tqdm>=4.67.1",
+    "xgboost>=3.0.0",
+    "pybind11>=2.13.6",
+    "requests>=2.32.3",
+    "ruamel-yaml>=0.18.10",
+    "setuptools>=78.1.1",
+    "mako>=1.3.10",
 ]
