@@ -1,84 +1,213 @@
-from time import time_ns
-from datatools import h5kit
+"""
+Merges multiple HDF5 files into a single output file using the correct
+h5py File.copy() method for efficient copying.
+
+All datasets from source files are copied directly to the root level
+of the output file, with keys renamed to format 'wifi_uuid' or 'bluetooth_uuid'.
+"""
+
 import argparse
-from tqdm import tqdm
-import sys
+import h5py
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
+import sys
+import time
+import uuid  # For generating unique identifiers
 
-def read_file(file, prefix):
-    h5_file = h5kit(file)
-    results = []
-    for key in h5_file.keys():
-        if prefix:
-            new_key = f"{prefix}_{time_ns()}"
-        else:
-            new_key = key
-        data = h5_file.read(key)
-        results.append((new_key, data))
-    # Use file size (in bytes) as an estimate for memory usage.
-    file_size = os.path.getsize(file)
-    return results, file_size
 
-def main():
-    parser = argparse.ArgumentParser(description="Combines h5 files concurrently in batches.")
-    parser.add_argument('--input', type=str, required=True, nargs='+')
-    parser.add_argument('--output', type=str, required=True)
-    parser.add_argument('--prefix', type=str, required=False)
-    parser.add_argument('--batch_size_mb', type=int, default=500,
-                        help="Maximum total file size in MB to load per batch.")
-    parser.add_argument('--max_workers', type=int, default=4, help="Number of processes for reading.")
-    args = parser.parse_args()
+def merge_hdf5_files(input_files, output_file, verbose=False):
+    """
+    Merges multiple HDF5 files into one, keeping all keys at the root level
+    and renaming them to use UUIDs.
 
-    threshold = args.batch_size_mb * 1024 * 1024  # convert MB to bytes
-    input_files = args.input
-    output_h5 = h5kit(args.output)
-    pbar = tqdm(input_files, colour="green", desc="Merging Files")
-    
-    batch_tasks = []
-    batch_mem = 0
+    Args:
+        input_files (list): A list of paths to input HDF5 files.
+        output_file (str): The path to the output HDF5 file.
+        verbose (bool): If True, print detailed progress messages.
+    """
+    # Prevent overwriting an input file
+    abs_input_paths = {os.path.abspath(f) for f in input_files}
+    abs_output_path = os.path.abspath(output_file)
+    if abs_output_path in abs_input_paths:
+        print(
+            f"Error: Output file '{output_file}' cannot be one of the input files.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
-        for file in pbar:
+    if os.path.exists(output_file):
+        print(
+            f"Warning: Output file '{output_file}' already exists and will be overwritten.",
+            file=sys.stderr,
+        )
+        # h5py 'w' mode truncates existing files
+
+    start_time = time.time()
+    print(f"Starting merge process into '{output_file}'...")
+
+    try:
+        # Open the destination file in write mode ('w')
+        # This creates the file if it doesn't exist or truncates it if it does.
+        with h5py.File(output_file, "w") as f_dest:
+            print(f"Created/Opened output file: '{output_file}'")
+
+            merged_keys = set()
+            total_keys_merged = 0
+            key_mappings = {}  # To track original key -> new key mappings
+
+            for i, source_path in enumerate(input_files):
+                file_start_time = time.time()
+                abs_source_path = os.path.abspath(source_path)
+
+                if not os.path.exists(abs_source_path):
+                    print(
+                        f"Warning: Input file '{source_path}' not found. Skipping.",
+                        file=sys.stderr,
+                    )
+                    continue
+
+                if not h5py.is_hdf5(abs_source_path):
+                    print(
+                        f"Warning: Input file '{source_path}' is not a valid HDF5 file. Skipping.",
+                        file=sys.stderr,
+                    )
+                    continue
+
+                try:
+                    print(f"Processing file {i+1}/{len(input_files)}: '{source_path}'")
+                    # Open the source file in read mode ('r')
+                    with h5py.File(source_path, "r") as f_source:
+                        keys_in_file = 0
+                        # Iterate through all top-level keys in the source file
+                        for key in f_source.keys():
+                            # Parse the key to extract prefix (wifi or bluetooth)
+                            if "_" in key:
+                                prefix = key.split("_")[0]
+                                if prefix in ["wifi", "bluetooth"]:
+                                    # Generate a new UUID
+                                    new_key = f"{prefix}_{uuid.uuid4()}"
+
+                                    if verbose:
+                                        print(f"  Renaming '{key}' to '{new_key}'")
+                                else:
+                                    # Not a wifi/bluetooth key, generate generic key
+                                    new_key = f"item_{uuid.uuid4()}"
+
+                                    if verbose:
+                                        print(
+                                            f"  Non-standard key '{key}' renamed to '{new_key}'"
+                                        )
+                            else:
+                                # Key doesn't have an underscore, generate generic key
+                                new_key = f"item_{uuid.uuid4()}"
+
+                                if verbose:
+                                    print(
+                                        f"  Non-standard key '{key}' renamed to '{new_key}'"
+                                    )
+
+                            # Store the mapping
+                            key_mappings[key] = new_key
+
+                            # Copy the data with the new key name
+                            f_source.copy(key, f_dest, name=new_key)
+                            merged_keys.add(new_key)
+                            keys_in_file += 1
+
+                        total_keys_merged += keys_in_file
+                        if verbose:
+                            print(f"  Added {keys_in_file} keys from '{source_path}'")
+
+                except Exception as e:
+                    print(
+                        f"Error processing file '{source_path}': {e}",
+                        file=sys.stderr,
+                    )
+                    # Abort on error during copy to prevent partial/corrupt merge
+                    raise  # Re-raise the exception to trigger the outer cleanup
+
+                file_end_time = time.time()
+                if verbose:
+                    print(
+                        f"  Finished processing '{source_path}' in {file_end_time - file_start_time:.2f} seconds."
+                    )
+
+            # Add attributes to the root of the merged file indicating completion
+            f_dest.attrs["merge_timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S %Z")
+            f_dest.attrs["merged_files"] = [
+                os.path.basename(f)
+                for f in input_files
+                if os.path.exists(f) and h5py.is_hdf5(f)
+            ]
+            f_dest.attrs["total_keys_merged"] = total_keys_merged
+
+            # Optionally save key mappings as an attribute
+            if verbose:
+                # Convert mappings dict to list of strings for storage
+                mapping_strings = [f"{old}→{new}" for old, new in key_mappings.items()]
+                try:
+                    f_dest.attrs["key_mappings"] = mapping_strings
+                except TypeError:
+                    # Handle case where attributes can't store large string lists
+                    print("Could not store key mappings as attribute (too large)")
+
+    except Exception as e:
+        print(f"\nAn error occurred during the merge process: {e}", file=sys.stderr)
+        # Clean up potentially partially written output file if it exists
+        if os.path.exists(output_file):
             try:
-                file_size = os.path.getsize(file)
-            except Exception as e:
-                print(f"Error reading file size of {file}: {e}")
-                continue
+                os.remove(output_file)
+                print(
+                    f"Removed partially created or corrupt output file '{output_file}'."
+                )
+            except OSError as remove_err:
+                print(
+                    f"Error trying to remove incomplete output file '{output_file}': {remove_err}",
+                    file=sys.stderr,
+                )
+        sys.exit(1)  # Exit with error status
 
-            future = executor.submit(read_file, file, args.prefix)
-            batch_tasks.append(future)
-            batch_mem += file_size
+    end_time = time.time()
+    print(
+        f"\nSuccessfully merged {total_keys_merged} keys from {len([f for f in input_files if os.path.exists(f) and h5py.is_hdf5(f)])} valid HDF5 file(s) into '{output_file}'"
+    )
+    print(f"Total time taken: {end_time - start_time:.2f} seconds.")
 
-            # If current batch exceeds threshold, process this batch.
-            if batch_mem >= threshold:
-                for fut in as_completed(batch_tasks):
-                    try:
-                        results, _ = fut.result()
-                        for new_key, data in results:
-                            output_h5.write(new_key, data)
-                    except Exception as e:
-                        print(f"Error processing a file: {e}")
-                batch_tasks = []
-                batch_mem = 0
-
-        # Process remaining tasks.
-        for fut in as_completed(batch_tasks):
-            try:
-                results, _ = fut.result()
-                for new_key, data in results:
-                    output_h5.write(new_key, data)
-            except Exception as e:
-                print(f"Error processing a file: {e}")
-
-    print("Done!")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Merge multiple HDF5 files into a single output file. "
+        "All datasets from source files are copied directly to the root level "
+        "of the output file with keys renamed to format 'wifi_uuid' or 'bluetooth_uuid'.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "input_files",
+        metavar="INPUT_FILE",
+        nargs="+",
+        help="One or more input HDF5 files to merge.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        dest="output_file",
+        help="Path to the output HDF5 file. Will be overwritten if it exists.",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Increase output verbosity.",
+    )
+
+    args = parser.parse_args()
+
+    # Basic validation before starting
+    if not args.output_file.endswith((".h5", ".hdf5", ".hdf", ".he5")):
+        print(
+            f"Warning: Output file '{args.output_file}' does not have a standard HDF5 extension.",
+            file=sys.stderr,
+        )
+
+    merge_hdf5_files(args.input_files, args.output_file, args.verbose)
+

@@ -18,15 +18,88 @@ import sys
 load_dotenv()
 
 
-class RFClassifier:
-    """RF Signal Classifier for WiFi vs Bluetooth with feature extraction"""
+def event_detector(PSD, threshold_factor=1.05**-1):
+    """
+    Detect events in PSD data where signal exceeds a threshold relative to the signal mean
+    """
+    window_size = 64
+    event_ranges = []
+    in_event = False
+    start_idx = 0
 
-    def __init__(self, model, feature_method="spectral_shape"):
+    # Calculate mean of the entire PSD
+    signal_mean = np.mean(PSD)
+
+    # Set threshold relative to the mean
+    dynamic_threshold = signal_mean * threshold_factor
+
+    i = 0
+    while i < len(PSD) - window_size + 1:
+        window = PSD[i : i + window_size]
+        window_average = round(sum(window) / window_size, 2)
+
+        if window_average > dynamic_threshold and not in_event:
+            start_idx = i
+            in_event = True
+            i += window_size
+        elif window_average <= dynamic_threshold and in_event:
+            event_ranges.append((start_idx, i - 1))
+            in_event = False
+            i += window_size
+        else:
+            i += window_size
+
+    if in_event:
+        event_ranges.append((start_idx, len(PSD) - 1))
+    elif not event_ranges:  # Only add (0,0) if no events were found
+        event_ranges.append((0, 0))
+
+    return event_ranges
+
+
+class RFClassifier:
+    """RF Signal Classifier for WiFi vs Bluetooth with event detection and width-based classification"""
+
+    def __init__(self, model, feature_method="combined", width_threshold=200):
         self.model = model
         self.feature_method = feature_method
+        self.width_threshold = (
+            width_threshold  # ~10 MHz in bins (threshold for BT vs WiFi)
+        )
         # Define expected signal characteristics
         self.wifi_width = 410  # ~20MHz in bins
         self.bt_width = 20  # ~1MHz in bins
+
+    def preprocess_with_event_detection(self, X, noise_floor=-190.0):
+        """Preprocess data with event detection to isolate signal regions"""
+        X_processed = X.copy()
+        event_widths = []  # Store the widths of detected events for each sample
+
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+            X_processed = X_processed.reshape(1, -1)
+
+        for i in range(X.shape[0]):
+            # Detect events in the signal
+            events = event_detector(X[i])
+
+            # Create a mask with noise floor
+            signal_mask = np.ones(X.shape[1]) * noise_floor
+
+            # Fill the mask with actual signal at event locations
+            total_width = 0
+            for start, end in events:
+                if start != 0 or end != 0:  # Skip if no event detected
+                    signal_mask[start : end + 1] = X[i, start : end + 1]
+                    total_width += end - start + 1
+
+            # Store the width of the detected event (in bins)
+            event_widths.append(total_width)
+
+            # Replace the original signal with the masked version
+            X_processed[i] = signal_mask
+
+        return X_processed, event_widths
 
     def extract_features(self, X):
         """Extract features from raw PSD data"""
@@ -34,7 +107,19 @@ class RFClassifier:
         if X.ndim == 1:
             X = X.reshape(1, -1)
 
-        return self._extract_spectral_shape_features_direct(X)
+        if self.feature_method == "spectral_shape":
+            return self._extract_spectral_shape_features_direct(X)
+        elif self.feature_method == "bandwidth":
+            return self._extract_bandwidth_features_direct(X)
+        elif self.feature_method == "combined":
+            spectral = self._extract_spectral_shape_features_direct(X)
+            bandwidth = self._extract_bandwidth_features_direct(X)
+            return np.hstack((spectral, bandwidth))
+        else:
+            # Default to combined features
+            spectral = self._extract_spectral_shape_features_direct(X)
+            bandwidth = self._extract_bandwidth_features_direct(X)
+            return np.hstack((spectral, bandwidth))
 
     def _extract_spectral_shape_features_direct(self, X):
         """Direct feature extraction for small batches or single samples"""
@@ -203,17 +288,120 @@ class RFClassifier:
 
         return np.array(features)
 
+    def _extract_bandwidth_features_direct(self, X):
+        """Direct bandwidth feature extraction for small batches"""
+        features = []
+
+        for i in range(X.shape[0]):
+            signal = X[i]
+            feature_vector = []
+
+            # Divide signal into segments
+            num_segments = 8
+            segment_size = len(signal) // num_segments
+
+            for j in range(num_segments):
+                start = j * segment_size
+                end = (j + 1) * segment_size
+                segment = signal[start:end]
+
+                # Find peaks in this segment
+                peaks, properties = scipy_signal.find_peaks(
+                    segment, height=np.median(segment), distance=self.bt_width // 2
+                )
+
+                if len(peaks) == 0:
+                    # No peaks in this segment
+                    feature_vector.extend([0, 0, 0, 0, 0])
+                    continue
+
+                # Calculate peak widths
+                widths = scipy_signal.peak_widths(segment, peaks, rel_height=0.5)[0]
+
+                # Calculate bandwidth features for this segment
+                bt_count = np.sum((widths > 5) & (widths < self.bt_width * 1.5))
+                wifi_count = np.sum(
+                    (widths > self.bt_width * 2) & (widths < self.wifi_width * 1.2)
+                )
+
+                # Average width
+                avg_width = np.mean(widths) if len(widths) > 0 else 0
+
+                # Peak height to width ratio
+                heights = properties["peak_heights"]
+                hw_ratio = np.mean(heights / widths) if len(widths) > 0 else 0
+
+                # Energy in peak regions vs total energy
+                peak_energy = 0
+                for p, w in zip(peaks, widths):
+                    left = max(0, int(p - w / 2))
+                    right = min(len(segment), int(p + w / 2))
+                    peak_region = segment[left:right]
+                    peak_energy += np.sum(10 ** (peak_region / 10))
+
+                total_energy = np.sum(10 ** (segment / 10))
+                energy_ratio = peak_energy / total_energy if total_energy > 0 else 0
+
+                feature_vector.extend(
+                    [bt_count, wifi_count, avg_width, hw_ratio, energy_ratio]
+                )
+
+            features.append(feature_vector)
+
+        return np.array(features)
+
     def predict(self, X, noise_floor=-190.0):
-        """Predict WiFi (0) or Bluetooth (1) from raw PSD data"""
+        """Predict WiFi (0) or Bluetooth (1) from raw PSD data with width-based adjustment"""
         # Replace -inf values with noise floor - 10
         X_clean = X.copy()
         X_clean[X_clean == -np.inf] = noise_floor - 10
 
+        # Apply event detection preprocessing
+        X_processed, event_widths = self.preprocess_with_event_detection(
+            X_clean, noise_floor
+        )
+
         # Extract features
-        X_features = self.extract_features(X_clean)
+        X_features = self.extract_features(X_processed)
+
+        # Get model prediction probabilities
+        y_proba = self.model.predict_proba(X_features)[:, 1]
+
+        # Initial prediction
+        y_pred = (y_proba > 0.5).astype(int)
+
+        # Adjust based on signal width
+        for i in range(len(y_pred)):
+            width = event_widths[i]
+
+            # Calculate model confidence
+            confidence = max(y_proba[i], 1 - y_proba[i])
+
+            # Only override if confidence is not very high
+            if confidence < 0.85:
+                if width < self.width_threshold:
+                    # Narrow signal - more likely Bluetooth (class 1)
+                    y_pred[i] = 1
+                else:
+                    # Wide signal - more likely WiFi (class 0)
+                    y_pred[i] = 0
+
+        return y_pred
+
+    def predict_proba(self, X, noise_floor=-190.0):
+        """Predict class probabilities with event detection preprocessing"""
+        # Replace -inf values with noise floor - 10
+        X_clean = X.copy()
+        X_clean[X_clean == -np.inf] = noise_floor - 10
+
+        # Apply event detection preprocessing
+        X_processed, _ = self.preprocess_with_event_detection(X_clean, noise_floor)
+
+        # Extract features
+        X_features = self.extract_features(X_processed)
 
         # Make prediction
-        return self.model.predict(X_features)
+        return self.model.predict_proba(X_features)
 
 
 # Data source factory
@@ -236,45 +424,6 @@ def create_data_source(source_type, data_path=None):
             sys.exit(1)
     else:
         raise ValueError(f"Unknown source type: {source_type}. Use 'h5' or 'sdr'")
-
-
-def event_detector(PSD, threshold_factor=1.05**-1):
-    """
-    Detect events in PSD data where signal exceeds a threshold relative to the signal mean
-    """
-    window_size = 64
-    event_ranges = []
-    in_event = False
-    start_idx = 0
-
-    # Calculate mean of the entire PSD
-    signal_mean = np.mean(PSD)
-
-    # Set threshold relative to the mean
-    dynamic_threshold = signal_mean * threshold_factor
-
-    i = 0
-    while i < len(PSD) - window_size + 1:
-        window = PSD[i : i + window_size]
-        window_average = round(sum(window) / window_size, 2)
-
-        if window_average > dynamic_threshold and not in_event:
-            start_idx = i
-            in_event = True
-            i += window_size
-        elif window_average <= dynamic_threshold and in_event:
-            event_ranges.append((start_idx, i - 1))
-            in_event = False
-            i += window_size
-        else:
-            i += window_size
-
-    if in_event:
-        event_ranges.append((start_idx, len(PSD) - 1))
-    elif not event_ranges:  # Only add (0,0) if no events were found
-        event_ranges.append((0, 0))
-
-    return event_ranges
 
 
 def run_inference(model, data: np.ndarray) -> int:
@@ -455,7 +604,7 @@ def main():
             print("Loaded RFClassifier model")
         else:
             # Create RFClassifier with the loaded model
-            model = RFClassifier(loaded_obj, feature_method="spectral_shape")
+            model = RFClassifier(loaded_obj, feature_method="combined")
             print("Loaded ML model and wrapped in RFClassifier")
     except Exception as e:
         print(f"Error loading model: {e}")

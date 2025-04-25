@@ -9,6 +9,7 @@ dependencies = [
     "h5py>=3.12.1",
     "ipykernel",
     "ipywidgets",
+    "joblib>=1.4.2",
     "lightgbm>=4.6.0",
     "pandas>=2.2.3",
     "plot>=0.6.5",
