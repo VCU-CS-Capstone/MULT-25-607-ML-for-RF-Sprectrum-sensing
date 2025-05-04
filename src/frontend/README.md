@@ -87,7 +87,7 @@ src/
 ## Troubleshooting
 
 - **WebSocket Connection Error**:  
-  Make sure your backend server is running and accessible at `ws://localhost:3030`.
+  Make sure your backend server is running and accessible at `ws://localhost:3030` or other endpoint.
 - **Port Conflicts**:  
   If port 3000 is in use, you can specify another port with `PORT=3001 npm start`.
 
