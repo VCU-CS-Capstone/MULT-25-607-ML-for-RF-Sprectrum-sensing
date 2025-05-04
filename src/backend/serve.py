@@ -60,7 +60,7 @@ def event_detector(PSD, threshold_factor=1.05**-1):
 class RFClassifier:
     """RF Signal Classifier for WiFi vs Bluetooth with event detection and width-based classification"""
 
-    def __init__(self, model, feature_method="combined", width_threshold=200):
+    def __init__(self, model, feature_method="combined", width_threshold=350):
         self.model = model
         self.feature_method = feature_method
         self.width_threshold = (
@@ -101,25 +101,37 @@ class RFClassifier:
 
         return X_processed, event_widths
 
+
     def extract_features(self, X):
         """Extract features from raw PSD data"""
         # For real-time/single sample processing
         if X.ndim == 1:
             X = X.reshape(1, -1)
 
+        import pandas as pd
+        
         if self.feature_method == "spectral_shape":
-            return self._extract_spectral_shape_features_direct(X)
+            features = self._extract_spectral_shape_features_direct(X)
+            feature_names = [f'spectral_{i}' for i in range(features.shape[1])]
+            return pd.DataFrame(features, columns=feature_names)
         elif self.feature_method == "bandwidth":
-            return self._extract_bandwidth_features_direct(X)
+            features = self._extract_bandwidth_features_direct(X)
+            feature_names = [f'bandwidth_{i}' for i in range(features.shape[1])]
+            return pd.DataFrame(features, columns=feature_names)
         elif self.feature_method == "combined":
             spectral = self._extract_spectral_shape_features_direct(X)
             bandwidth = self._extract_bandwidth_features_direct(X)
-            return np.hstack((spectral, bandwidth))
+            features = np.hstack((spectral, bandwidth))
+            feature_names = [f'combined_{i}' for i in range(features.shape[1])]
+            return pd.DataFrame(features, columns=feature_names)
         else:
             # Default to combined features
             spectral = self._extract_spectral_shape_features_direct(X)
             bandwidth = self._extract_bandwidth_features_direct(X)
-            return np.hstack((spectral, bandwidth))
+            features = np.hstack((spectral, bandwidth))
+            feature_names = [f'combined_{i}' for i in range(features.shape[1])]
+            return pd.DataFrame(features, columns=feature_names)
+
 
     def _extract_spectral_shape_features_direct(self, X):
         """Direct feature extraction for small batches or single samples"""
