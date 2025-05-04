@@ -27,9 +27,11 @@ import ControlButtons from "./ControlButtons";
 import DetectionInfo from "./DetectionInfo";
 import ErrorModal from "./ErrorModal";
 import useWindowSize from "./utils/useWindowSize";
+import ServerAddressModal from "./ServerAddressModal";
 
 const CARD_RADIUS = 4;
 const MAX_CONTAINER_WIDTH = 1920;
+const DEFAULT_SERVER_ADDRESS = "ws://localhost:3030";
 
 function getLargest16x9Rect(maxWidth, maxHeight) {
   let width = maxWidth;
@@ -44,6 +46,10 @@ function getLargest16x9Rect(maxWidth, maxHeight) {
 export default function Spectrogram() {
   // Responsive window size
   const { width: windowWidth, height: windowHeight } = useWindowSize();
+
+  // Server connection
+  const [serverAddressModalOpen, setServerAddressModalOpen] = useState(true);
+  const [serverAddress, setServerAddress] = useState(DEFAULT_SERVER_ADDRESS);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -77,6 +83,16 @@ export default function Spectrogram() {
 
   // Color map (memoized)
   const colorMap = useMemo(() => generateColorMap(), []);
+
+  // Handle server address save
+  const handleServerAddressSave = (address) => {
+    setServerAddress(address);
+    setServerAddressModalOpen(false);
+    // Reset connection state when server changes
+    if (websocketManagerRef.current) {
+      websocketManagerRef.current.disconnect();
+    }
+  };
 
   // ---- Handlers ----
 
@@ -164,7 +180,7 @@ export default function Spectrogram() {
   useEffect(() => {
     if (!websocketManagerRef.current) {
       websocketManagerRef.current = createWebSocketManager(
-        "ws://localhost:3030",
+        serverAddress, // Use the state variable instead of hardcoded address
         {
           onOpen: () => {
             setConnectionStatus("Connected");
@@ -180,7 +196,7 @@ export default function Spectrogram() {
           onError: (evt) => {
             let msg = "WebSocket error";
             if (evt?.target?.readyState === WebSocket.CLOSED)
-              msg = "Failed to connect to ws://localhost:3030";
+              msg = `Failed to connect to ${serverAddress}`;
             setError(msg);
             setIsActive(false);
             setIsConnecting(false);
@@ -202,7 +218,7 @@ export default function Spectrogram() {
       websocketManagerRef.current.disconnect();
       setIsConnecting(false);
     };
-  }, [isActive, isClearing]);
+  }, [isActive, isClearing, serverAddress]); // Add serverAddress as dependency
 
   // Listen for fullscreen changes
   useEffect(() => {
@@ -232,6 +248,11 @@ export default function Spectrogram() {
         m: 0,
       }}
     >
+      <ServerAddressModal
+        open={serverAddressModalOpen}
+        onSave={handleServerAddressSave}
+        defaultAddress={DEFAULT_SERVER_ADDRESS}
+      />
       <Box
         ref={canvasContainerRef}
         sx={{
