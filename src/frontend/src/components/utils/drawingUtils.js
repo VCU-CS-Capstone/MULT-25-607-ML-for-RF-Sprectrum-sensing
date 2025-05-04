@@ -1,310 +1,230 @@
-// === DATA VALIDATION AND PROCESSING ===
-const pixel_size = 4;
-// Utility function to validate PSD data
-export const validatePSDData = (psd) => {
-  return Array.isArray(psd) && psd.length === 2048;
-};
+// drawingUtils.js
 
-// Helper function to downsample PSD data
-export const downsamplePsd = (psd, targetWidth) => {
-  const step = Math.floor(psd.length / targetWidth);
-  const downsampled = new Array(targetWidth);
+import { downsamplePSD, scaleDetections, isValidPSD } from "./psdUtils";
 
-  for (let i = 0; i < targetWidth; i++) {
-    let sum = 0;
-    const startIdx = i * step;
-    const endIdx = Math.min(startIdx + step, psd.length);
-
-    for (let j = startIdx; j < endIdx; j++) {
-      sum += psd[j];
-    }
-
-    downsampled[i] = sum / (endIdx - startIdx);
-  }
-
-  return downsampled;
-};
-
-// Helper function to scale detection indices to match downsampled data
-export const scaleDetections = (detections, originalLength, targetWidth) => {
-  // If both detection values are 0, return [0, 0]
-  if (detections[0] === 0 && detections[1] === 0) {
-    return [0, 0];
-  }
-
-  const scale = targetWidth / originalLength;
-  return [
-    Math.floor(detections[0] * scale),
-    Math.floor(detections[1] * scale)
-  ];
-};
-
-// === IMAGE AND CANVAS OPERATIONS ===
-
-const DetectionType = {
+export const DetectionType = {
   NONE: 0,
   WIFI: 1,
   BLUETOOTH: 2,
 };
 
+export class SpectrogramDrawer {
+  /**
+   * @param {HTMLCanvasElement} canvas
+   * @param {Array} colorMap
+   * @param {Function} onError
+   * @param {number} pixelSize
+   */
+  constructor(canvas, colorMap, onError = () => {}, pixelSize = 8) {
+    this.canvas = canvas;
+    this.colorMap = colorMap;
+    this.onError = onError;
+    this.pixelSize = pixelSize;
 
-export const createRowImageData = (
-  width,
-  psd,
-  colorMap,
-  detections,
-  minDbm,
-  maxDbm,
-  detection,
-  pixelSize = 8, // Default to 2 for backward compatibility
-) => {
-  // Downsample PSD data to match the canvas width divided by pixel size
-  const pointsToDisplay = Math.floor(width / pixelSize);
-  const downsampled = downsamplePsd(psd, pointsToDisplay);
-  const scaledDetections = scaleDetections(detections, psd.length, pointsToDisplay);
-
-  // Create a row with configurable pixel height
-  const rowHeight = pixelSize;
-  const imgData = new ImageData(width, rowHeight);
-  const data = imgData.data;
-  const dbmRange = maxDbm - minDbm;
-  const [detStart, detEnd] = scaledDetections;
-
-  for (let i = 0; i < pointsToDisplay; i++) {
-    // Calculate normalized value more efficiently
-    const normalized = Math.max(0, Math.min(1, (downsampled[i] - minDbm) / dbmRange));
-    const colorIdx = Math.min(255, Math.floor(normalized * 255));
-    let r, g, b, a;
-
-    if (detection === DetectionType.WIFI && detStart < i && detEnd > i) {
-      r = 0;
-      g = 255;
-      b = 0;
-      a = 255; // pure blue
-    } else if (detection === DetectionType.BLUETOOTH && detStart < i && detEnd > i) {
-      r = 255;
-      g = 0;
-      b = 0;
-      a = 255; // pure red
-    } else {
-      // Get color from the colormap
-      [r, g, b, a] = colorMap[colorIdx] || [0, 0, 0, 255];
-    }
-
-    const alpha = (detStart < i && detEnd > i) ? a : a / 2;
-
-    // Set all pixels in the NxN block
-    for (let x = 0; x < pixelSize; x++) {
-      for (let y = 0; y < rowHeight; y++) {
-        const baseIdx = ((y * width) + (i * pixelSize) + x) * 4;
-        data[baseIdx] = r;
-        data[baseIdx + 1] = g;
-        data[baseIdx + 2] = b;
-        data[baseIdx + 3] = alpha;
-      }
-    }
+    this.ctx = canvas.getContext("2d", { willReadFrequently: true });
+    this.psdHistory = [];
+    this.detectionsHistory = [];
+    this.detectionTypeHistory = [];
+    this.lastRangeDbm = [-110, -70];
+    this.currentDrawTimeout = null;
+    this.maxHistorySize = Math.floor(canvas.height / pixelSize);
   }
 
-  return imgData;
-};
-export const shiftImageUp = (ctx, width, height, pixel_size) => {
-  try {
-    const image = ctx.getImageData(0, pixel_size, width, height - pixel_size);
-    ctx.putImageData(image, 0, 0);
-    return true;
-  } catch (error) {
-    console.error("Error shifting image data:", error);
-    return false;
+  /**
+   * Create a single row of spectrogram image data.
+   */
+  createSpectrogramRow(psd, detections, minDbm, maxDbm, detectionType) {
+    const width = this.canvas.width;
+    const pixelSize = this.pixelSize;
+    const points = Math.floor(width / pixelSize);
+    const downsampled = downsamplePSD(psd, points);
+    const [detStart, detEnd] = scaleDetections(detections, psd.length, points);
+
+    const rowHeight = pixelSize;
+    const imgData = new ImageData(width, rowHeight);
+    const data = imgData.data;
+    const dbmRange = maxDbm - minDbm;
+
+    for (let i = 0; i < points; i++) {
+      const normalized = Math.max(
+        0,
+        Math.min(1, (downsampled[i] - minDbm) / dbmRange),
+      );
+      const colorIdx = Math.min(255, Math.floor(normalized * 255));
+      let r, g, b, a;
+
+      // Highlight detection region
+      if (detectionType === DetectionType.WIFI && detStart < i && detEnd > i) {
+        [r, g, b, a] = [0, 255, 0, 255];
+      } else if (
+        detectionType === DetectionType.BLUETOOTH &&
+        detStart < i &&
+        detEnd > i
+      ) {
+        [r, g, b, a] = [255, 0, 0, 255];
+      } else {
+        [r, g, b, a] = this.colorMap[colorIdx] || [0, 0, 0, 255];
+      }
+
+      const alpha = detStart < i && detEnd > i ? a : a / 2;
+
+      // Fill the pixel block
+      for (let x = 0; x < pixelSize; x++) {
+        for (let y = 0; y < rowHeight; y++) {
+          const baseIdx = (y * width + i * pixelSize + x) * 4;
+          data[baseIdx] = r;
+          data[baseIdx + 1] = g;
+          data[baseIdx + 2] = b;
+          data[baseIdx + 3] = alpha;
+        }
+      }
+    }
+
+    return imgData;
   }
-};
 
-export const clearCanvas = (ctx, width, height) => {
-  ctx.clearRect(0, 0, width, height);
-};
+  /**
+   * Draws a new row on the spectrogram.
+   */
+  draw(psd, rangeDbm, detections, detectionType) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (!this.canvas) throw new Error("Canvas not provided");
+        if (!isValidPSD(psd)) throw new Error("Invalid PSD data format");
+        if (this.currentDrawTimeout) return resolve();
 
-// === MAIN DRAWING FUNCTIONS ===
+        // Update histories
+        this.psdHistory.push(psd);
+        this.detectionsHistory.push(detections);
+        this.detectionTypeHistory.push(detectionType);
+        if (this.psdHistory.length > this.maxHistorySize) {
+          this.psdHistory.shift();
+          this.detectionsHistory.shift();
+          this.detectionTypeHistory.shift();
+        }
+        this.lastRangeDbm = rangeDbm;
 
-// Main drawing function
-export const drawSpectrogram = ({
-  canvas,
-  psd,
-  colorMap,
-  detections,
-  minDbm,
-  maxDbm,
-  detection,
-  onError = () => { },
-  drawTimeout = null,
-  setDrawTimeout = () => { },
-}) => {
-  return new Promise((resolve, reject) => {
-    try {
-      // Validate inputs
-      if (!canvas) {
-        reject(new Error("Canvas not provided"));
-        return;
-      }
-
-      if (!validatePSDData(psd)) {
-        onError("Invalid PSD data format.");
-        reject(new Error("Invalid PSD data format"));
-        return;
-      }
-
-      // Check if previous draw is still in progress
-      if (drawTimeout) {
-        resolve();
-        return;
-      }
-
-      // Setup canvas context
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      const width = canvas.width;
-      const height = canvas.height;
-      const pixel_size = 6;
-
-      // Schedule drawing
-      setDrawTimeout(
-        requestAnimationFrame(() => {
-          const imgData = createRowImageData(
-            width,
-            psd,             // Now passing the raw PSD data
-            colorMap,
-            detections,      // Now passing the raw detections
-            minDbm,
-            maxDbm,
-            detection,
-            pixel_size   // Specifying pixelSize as 2
+        this.currentDrawTimeout = requestAnimationFrame(() => {
+          const imgData = this.createSpectrogramRow(
+            psd,
+            detections,
+            rangeDbm[0],
+            rangeDbm[1],
+            detectionType,
           );
 
-          // Shift existing image up
-          if (!shiftImageUp(ctx, width, height, pixel_size)) {
-            onError("Error shifting image data");
+          if (
+            !SpectrogramDrawer.shiftCanvasUp(
+              this.ctx,
+              this.canvas.width,
+              this.canvas.height,
+              this.pixelSize,
+            )
+          ) {
+            this.onError("Error shifting image data");
           }
 
-          // Draw new row at the bottom
-          ctx.putImageData(imgData, 0, height - pixel_size);
-
-          // Clear timeout and resolve
-          setDrawTimeout(null);
+          this.ctx.putImageData(
+            imgData,
+            0,
+            this.canvas.height - this.pixelSize,
+          );
+          this.currentDrawTimeout = null;
           resolve();
-        }),
-      );
-    } catch (error) {
-      console.error("Error in drawSpectrogram:", error);
-      onError("Error drawing spectrogram.");
-      reject(error);
-    }
-  });
-};
+        });
+      } catch (error) {
+        console.error("Error in draw:", error);
+        this.onError("Error drawing spectrogram.");
+        reject(error);
+      }
+    });
+  }
 
-export const createSpectrogramDrawer = (canvas, colorMap, onError) => {
-  let currentDrawTimeout = null;
-  let psdHistory = [];
-  let detectionHistory = [];
-  let detectionsHistory = [];
-  let lastRangeDbm = [-110, -70]; // Default range
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  const maxHistorySize = canvas.height / pixel_size; // Each row is 2px high
+  /**
+   * Redraws the entire canvas with the current history and range.
+   */
+  redrawFullCanvas(rangeDbm) {
+    SpectrogramDrawer.clearCanvas(
+      this.ctx,
+      this.canvas.width,
+      this.canvas.height,
+    );
 
-  const redrawFullCanvas = (rangeDbm) => {
-    clearCanvas(ctx, canvas.width, canvas.height);
+    for (let i = 0; i < this.psdHistory.length; i++) {
+      const psd = this.psdHistory[i];
+      const detections = this.detectionsHistory[i];
+      const detectionType = this.detectionTypeHistory[i];
+      const y =
+        this.canvas.height - (this.psdHistory.length - i) * this.pixelSize;
+      if (y < 0) continue;
 
-    // Process each row of history from oldest to newest
-    for (let i = 0; i < psdHistory.length; i++) {
-      const psd = psdHistory[i];
-      const detections = detectionsHistory[i];
-      const detection = detectionHistory[i]
-      // Calculate position from bottom (newest data at bottom)
-      const y = canvas.height - ((psdHistory.length - i) * 2);
-      if (y < 0) continue; // Skip if it would be drawn outside the canvas
-
-      // Downsample and create row image data
-      const pointsToDisplay = Math.floor(canvas.width / 2);
-      const downsampled = downsamplePsd(psd, pointsToDisplay);
-      const scaledDetections = scaleDetections(detections, psd.length, pointsToDisplay);
-      const imgData = createRowImageData(
-        canvas.width,
-        downsampled,
-        colorMap,
-        scaledDetections,
+      const imgData = this.createSpectrogramRow(
+        psd,
+        detections,
         rangeDbm[0],
         rangeDbm[1],
-        detection,
+        detectionType,
       );
-
-      // Draw directly at the calculated position
-      ctx.putImageData(imgData, 0, y);
+      this.ctx.putImageData(imgData, 0, y);
     }
-  };
+  }
 
-  const draw = (psd, rangeDbm, detections, detection) => {
-    // Update histories
-    psdHistory.push(psd);
-    detectionsHistory.push(detections);
-    detectionHistory.push(detection);
-    if (psdHistory.length > maxHistorySize) {
-      detectionHistory.shift();
-      psdHistory.shift();
-      detectionHistory.shift();
+  /**
+   * Updates the dBm range and redraws the canvas.
+   */
+  updateRange(rangeDbm) {
+    if (this.currentDrawTimeout) {
+      cancelAnimationFrame(this.currentDrawTimeout);
+      this.currentDrawTimeout = null;
     }
-
-    lastRangeDbm = rangeDbm;
-
-    return drawSpectrogram({
-      canvas,
-      psd,
-      colorMap,
-      detections,
-      minDbm: rangeDbm[0],
-      maxDbm: rangeDbm[1],
-      detection,
-      onError,
-      drawTimeout: currentDrawTimeout,
-      setDrawTimeout: (timeout) => {
-        currentDrawTimeout = timeout;
-      },
-    });
-  };
-
-  const updateRange = (rangeDbm) => {
-    // Cancel any pending draw
-    if (currentDrawTimeout) {
-      cancelAnimationFrame(currentDrawTimeout);
-      currentDrawTimeout = null;
+    this.lastRangeDbm = rangeDbm;
+    if (this.psdHistory.length > 0) {
+      this.redrawFullCanvas(rangeDbm);
     }
-
-    lastRangeDbm = rangeDbm;
-
-    // Immediately redraw the entire canvas with the new range
-    if (psdHistory.length > 0) {
-      redrawFullCanvas(rangeDbm);
-    }
-
     return Promise.resolve();
-  };
+  }
 
-  const clear = () => {
-    clearCanvas(ctx, canvas.width, canvas.height);
-    psdHistory = [];
-    detectionHistory = [];
-    detectionsHistory = [];
-  };
+  /**
+   * Clears the canvas and all history.
+   */
+  clear() {
+    SpectrogramDrawer.clearCanvas(
+      this.ctx,
+      this.canvas.width,
+      this.canvas.height,
+    );
+    this.psdHistory = [];
+    this.detectionsHistory = [];
+    this.detectionTypeHistory = [];
+  }
 
-  const cleanup = () => {
-    if (currentDrawTimeout) {
-      cancelAnimationFrame(currentDrawTimeout);
-      currentDrawTimeout = null;
+  /**
+   * Cleans up any pending draws and clears history.
+   */
+  cleanup() {
+    if (this.currentDrawTimeout) {
+      cancelAnimationFrame(this.currentDrawTimeout);
+      this.currentDrawTimeout = null;
     }
-    psdHistory = [];
-    detectionHistory = [];
-    detectionsHistory = [];
-  };
+    this.psdHistory = [];
+    this.detectionsHistory = [];
+    this.detectionTypeHistory = [];
+  }
 
-  return {
-    draw,
-    updateRange,
-    clear,
-    cleanup,
-  };
-};
+  // --- Static helpers ---
+
+  static clearCanvas(ctx, width, height) {
+    ctx.clearRect(0, 0, width, height);
+  }
+
+  static shiftCanvasUp(ctx, width, height, pixelSize) {
+    try {
+      const image = ctx.getImageData(0, pixelSize, width, height - pixelSize);
+      ctx.putImageData(image, 0, 0);
+      return true;
+    } catch (error) {
+      console.error("Error shifting image data:", error);
+      return false;
+    }
+  }
+}

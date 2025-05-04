@@ -1,284 +1,384 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
-import { createSpectrogramDrawer } from "./utils/drawingUtils";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+  useCallback,
+} from "react";
+import {
+  Card,
+  CardContent,
+  Box,
+  IconButton,
+  Tooltip,
+  Paper,
+} from "@mui/material";
+import FullscreenIcon from "@mui/icons-material/Fullscreen";
+import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
+import { getDetectionLabel } from "./utils/classify";
+import { SpectrogramDrawer } from "./utils/drawingUtils";
+import { createWebSocketManager } from "./utils/websocketHandler";
 import { generateColorMap } from "./utils/colorMap";
-import { Box, Card, CardContent, Typography, Button, Slider } from '@mui/material';
+import SpectrogramCanvas from "./SpectrogramCanvas";
+import SignalRangeSlider from "./SignalRangeSlider";
+import PixelSizeSlider from "./PixelSizeSlider";
+import ConnectionStatus from "./ConnectionStatus";
+import ControlButtons from "./ControlButtons";
+import DetectionInfo from "./DetectionInfo";
+import ErrorModal from "./ErrorModal";
+import useWindowSize from "./utils/useWindowSize";
 
-const CANVAS_WIDTH = 2048;
-const CANVAS_HEIGHT = 1024;
-const WEBSOCKET_URL = "ws://localhost:3030";
+const CARD_RADIUS = 4;
+const MAX_CONTAINER_WIDTH = 1920;
 
-const DetectionType = {
-  NONE: 0,
-  WIFI: 1,
-  BLUETOOTH: 2,
-};
-
-const getDetectionLabel = (type) => {
-  switch (type) {
-    case DetectionType.WIFI:
-      return "WiFi";
-    case DetectionType.BLUETOOTH:
-      return "Bluetooth";
-    default:
-      return "None";
+function getLargest16x9Rect(maxWidth, maxHeight) {
+  let width = maxWidth;
+  let height = Math.round((width * 9) / 16);
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = Math.round((height * 16) / 9);
   }
-};
+  return { width, height };
+}
 
-const Spectrogram = () => {
+export default function Spectrogram() {
+  // Responsive window size
+  const { width: windowWidth, height: windowHeight } = useWindowSize();
+
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const canvasContainerRef = useRef(null);
+
+  // Compute canvas 16:9 size within 80% height or 1100px width
+  const MAX_CONTAINER_HEIGHT = Math.floor(windowHeight * 0.7);
+  const { width: canvasWidth, height: canvasHeight } = getLargest16x9Rect(
+    Math.min(windowWidth - 32, MAX_CONTAINER_WIDTH),
+    Math.min(windowHeight - 32, MAX_CONTAINER_HEIGHT),
+  );
+
   // Refs
   const canvasRef = useRef(null);
   const spectrogramDrawerRef = useRef(null);
-  const websocketRef = useRef(null);
+  const websocketManagerRef = useRef(null);
 
   // State
   const [connectionStatus, setConnectionStatus] = useState("Idle");
   const [error, setError] = useState(null);
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
   const [isActive, setIsActive] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [currentDetection, setCurrentDetection] = useState("None");
   const [detectionRange, setDetectionRange] = useState({ start: 0, end: 0 });
   const lastUsedRangeRef = useRef([-110, -70]);
   const [rangeDbm, setRangeDbm] = useState(lastUsedRangeRef.current);
-  const handleRangeChange = (_, newValue) => {
-    setRangeDbm(newValue);
-    lastUsedRangeRef.current = newValue; // Keep ref in sync
-  };
+  const [pixelSize, setPixelSize] = useState(4);
 
-  // Generate color map
+  // Color map (memoized)
   const colorMap = useMemo(() => generateColorMap(), []);
 
-  // Initialize spectrogram drawer
-  useEffect(() => {
-    if (canvasRef.current && colorMap) {
-      spectrogramDrawerRef.current = createSpectrogramDrawer(
-        canvasRef.current,
-        colorMap,
-        setError
-      );
+  // ---- Handlers ----
 
-      return () => {
-        spectrogramDrawerRef.current?.cleanup();
-      };
-    }
-  }, [colorMap]);
+  function handleRangeChange(_, newValue) {
+    setRangeDbm(newValue);
+    lastUsedRangeRef.current = newValue;
+  }
 
-  useEffect(() => {
-    if (spectrogramDrawerRef.current) {
-      // Use the ref to prevent unnecessary updates
-      spectrogramDrawerRef.current.updateRange(lastUsedRangeRef.current)
-        .catch((error) => {
-          console.error("Failed to update range:", error);
-        });
-    }
-  }, [rangeDbm]);
+  function handlePixelSizeChange(_, newValue) {
+    setPixelSize(newValue);
+  }
 
-  const handleWebSocketMessage = (event) => {
+  // WebSocket message handler
+  function handleWebSocketMessage(event) {
     try {
       const data = JSON.parse(event.data);
-      if (!Array.isArray(data) || data.length !== 2051) {
+      if (!Array.isArray(data) || data.length !== 2051)
         throw new Error("Invalid data format");
-      }
-
       const psdData = data.slice(0, 2048);
       const detectionType = data[2048];
       const startIndex = data[2049];
       const endIndex = data[2050];
 
-      // Update detection state
       setCurrentDetection(getDetectionLabel(detectionType));
       setDetectionRange({ start: startIndex, end: endIndex });
 
-      // Use the ref's value to ensure consistency
-      spectrogramDrawerRef.current?.draw(
-        psdData,
-        lastUsedRangeRef.current, // Use ref instead of state to ensure latest value
-        [startIndex, endIndex],
-        detectionType,
-      ).catch((error) => {
-        console.error("Failed to draw spectrogram:", error);
-        setError("Drawing error occurred");
-      });
-    } catch (error) {
-      console.error("Error processing WebSocket message:", error);
-      setError("Invalid data received");
+      spectrogramDrawerRef.current
+        ?.draw(
+          psdData,
+          lastUsedRangeRef.current,
+          [startIndex, endIndex],
+          detectionType,
+        )
+        .catch((e) => setError("Drawing error: " + e.message));
+    } catch (e) {
+      setError("Invalid data received: " + e.message);
     }
-  };
+  }
 
-  // WebSocket connection management
-  const initializeWebSocket = () => {
-    if (websocketRef.current) {
-      websocketRef.current.close();
-    }
-
-    const ws = new WebSocket(WEBSOCKET_URL);
-
-    ws.onopen = () => {
-      console.log("WebSocket Connected");
-      setConnectionStatus("Connected");
-      setIsConnected(true);
-      setError(null);
-    };
-
-    ws.onclose = () => {
-      console.log("WebSocket Disconnected");
-      setConnectionStatus("Disconnected");
-      setIsConnected(false);
-      ws.close();
-      if (isActive && !isClearing) {
-        websocketRef.current.close();
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket Error:", error);
-      setError("WebSocket connection error");
-    };
-
-    ws.onmessage = handleWebSocketMessage;
-    websocketRef.current = ws;
-  };
-
-  // Handle connection state
-  useEffect(() => {
-    if (isActive && !isClearing) {
-      initializeWebSocket();
-    } else if (websocketRef.current) {
-      websocketRef.current.close();
-    }
-
-    return () => {
-      if (websocketRef.current) {
-        websocketRef.current.close();
-      }
-    };
-  }, [isActive, isClearing]);
-
-  const handleClear = () => {
+  function handleClear() {
     setIsClearing(true);
-
-    if (websocketRef.current) {
-      websocketRef.current.close();
-    }
-
+    websocketManagerRef.current?.disconnect();
     spectrogramDrawerRef.current?.clear();
     setError(null);
     setCurrentDetection("None");
     setDetectionRange({ start: 0, end: 0 });
+    setTimeout(() => setIsClearing(false), 100);
+  }
 
-    setTimeout(() => {
-      setIsClearing(false);
-    }, 100);
-  };
+  const handleFullscreenToggle = useCallback(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) el.requestFullscreen();
+    else document.exitFullscreen();
+  }, []);
+
+  // ---- Effects ----
+
+  // Initialize SpectrogramDrawer
+  useEffect(() => {
+    if (canvasRef.current && colorMap) {
+      spectrogramDrawerRef.current = new SpectrogramDrawer(
+        canvasRef.current,
+        colorMap,
+        setError,
+        pixelSize,
+      );
+      return () => spectrogramDrawerRef.current?.cleanup();
+    }
+  }, [colorMap, pixelSize, canvasWidth, canvasHeight]);
+
+  // Update PSD range on slider change
+  useEffect(() => {
+    spectrogramDrawerRef.current
+      ?.updateRange(lastUsedRangeRef.current)
+      .catch((e) => setError("Failed to update range: " + e.message));
+  }, [rangeDbm]);
+
+  // Show error modal if `error` changes
+  useEffect(() => {
+    if (error) setErrorModalOpen(true);
+  }, [error]);
+
+  // Manage WebSocket lifecycle
+  useEffect(() => {
+    if (!websocketManagerRef.current) {
+      websocketManagerRef.current = createWebSocketManager(
+        "ws://localhost:3030",
+        {
+          onOpen: () => {
+            setConnectionStatus("Connected");
+            setIsConnected(true);
+            setError(null);
+            setIsConnecting(false);
+          },
+          onClose: () => {
+            setConnectionStatus("Disconnected");
+            setIsConnected(false);
+            setIsConnecting(false);
+          },
+          onError: (evt) => {
+            let msg = "WebSocket error";
+            if (evt?.target?.readyState === WebSocket.CLOSED)
+              msg = "Failed to connect to ws://localhost:3030";
+            setError(msg);
+            setIsActive(false);
+            setIsConnecting(false);
+          },
+          onMessage: handleWebSocketMessage,
+        },
+      );
+    }
+
+    if (isActive && !isClearing) {
+      setIsConnecting(true);
+      websocketManagerRef.current.connect();
+    } else {
+      websocketManagerRef.current.disconnect();
+      setIsConnecting(false);
+    }
+
+    return () => {
+      websocketManagerRef.current.disconnect();
+      setIsConnecting(false);
+    };
+  }, [isActive, isClearing]);
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const onFS = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFS);
+    return () => document.removeEventListener("fullscreenchange", onFS);
+  }, []);
+
+  // ---- Layout values ----
+
+  const displayCanvasWidth = isFullscreen ? windowWidth : canvasWidth;
+  const displayCanvasHeight = isFullscreen ? windowHeight : canvasHeight;
+  const overlayControlWidth = 420;
+
+  // ---- Render ----
 
   return (
     <Box
       sx={{
+        minHeight: "100vh",
+        width: "100vw",
+        bgcolor: "background.default",
         display: "flex",
-        justifyContent: "center",
         alignItems: "center",
-        height: "100%",
+        justifyContent: "center",
+        p: 0,
+        m: 0,
       }}
     >
-      <Card sx={{ width: CANVAS_WIDTH + 40, padding: 2 }}>
-        <CardContent>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {/* Spectrogram Canvas */}
-            <Box sx={{ display: "flex", justifyContent: "center" }}>
-              <canvas
-                ref={canvasRef}
-                width={CANVAS_WIDTH}
-                height={CANVAS_HEIGHT}
-                style={{ background: "black" }}
-              />
-            </Box>
-
-            {/* Signal Range Control */}
-            <Box sx={{ mt: 1 }}>
-              <Typography variant="body1" gutterBottom>
-                Signal Range (dBm):
-              </Typography>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                <Typography variant="caption">{rangeDbm[0]}</Typography>
-                <Slider
-                  value={rangeDbm}
-                  onChange={handleRangeChange}
-                  valueLabelDisplay="auto"
-                  min={-200}
-                  max={0}
-                  sx={{ flex: 1 }}
-                />
-                <Typography variant="caption">{rangeDbm[1]}</Typography>
-              </Box>
-            </Box>
-
-            {/* Connection Status */}
-            <Box
+      <Box
+        ref={canvasContainerRef}
+        sx={{
+          width: displayCanvasWidth,
+          height: isFullscreen ? displayCanvasHeight : "auto",
+          bgcolor: isFullscreen ? "black" : "background.paper",
+          borderRadius: isFullscreen ? 0 : CARD_RADIUS,
+          boxShadow: isFullscreen ? 0 : 3,
+          p: isFullscreen ? 0 : { xs: 1, sm: 2 },
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: isFullscreen ? 0 : 2,
+          position: "relative",
+          m: 0,
+        }}
+      >
+        {/* Fullscreen toggle */}
+        <Box sx={{ position: "absolute", top: 8, right: 8, zIndex: 10 }}>
+          <Tooltip title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
+            <IconButton
+              size="small"
+              onClick={handleFullscreenToggle}
+              color="primary"
               sx={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                bgcolor: "background.paper",
+                borderRadius: "50%",
+                opacity: 0.8,
+                "&:hover": { opacity: 1 },
               }}
             >
-              <Typography variant="body1" color="textSecondary">
-                Status: {isClearing ? "Clearing" : connectionStatus}
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 10,
-                    height: 10,
-                    borderRadius: "50%",
-                    backgroundColor: isConnected ? "#4CAF50" : "#f44336",
-                    marginLeft: 10,
-                  }}
+              {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+            </IconButton>
+          </Tooltip>
+        </Box>
+
+        {/* Spectrogram Canvas */}
+        <SpectrogramCanvas
+          canvasRef={canvasRef}
+          width={displayCanvasWidth}
+          height={displayCanvasHeight}
+          sx={{
+            borderRadius: isFullscreen ? 0 : CARD_RADIUS,
+            boxShadow: isFullscreen ? 0 : 1,
+            width: "100%",
+            height: "100%",
+            maxWidth: "100vw",
+            maxHeight: "100vh",
+            mb: isFullscreen ? 0 : 2,
+            background: "black",
+            p: 0,
+            m: 0,
+          }}
+        />
+
+        {/* Controls */}
+        {isFullscreen ? (
+          <Paper
+            elevation={6}
+            sx={{
+              position: "fixed",
+              left: 24,
+              top: 24,
+              width: overlayControlWidth,
+              bgcolor: "rgba(30,30,30,0.92)",
+              color: "white",
+              borderRadius: CARD_RADIUS,
+              p: 2,
+              zIndex: 1201,
+              boxShadow: 6,
+            }}
+          >
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <SignalRangeSlider
+                rangeDbm={rangeDbm}
+                onChange={handleRangeChange}
+              />
+              <PixelSizeSlider
+                pixelSize={pixelSize}
+                onChange={handlePixelSizeChange}
+              />
+              <ConnectionStatus
+                isClearing={isClearing}
+                connectionStatus={connectionStatus}
+                isConnected={isConnected}
+              />
+              <ControlButtons
+                isActive={isActive}
+                setIsActive={setIsActive}
+                isClearing={isClearing}
+                handleClear={handleClear}
+                isConnecting={isConnecting}
+              />
+              <DetectionInfo
+                currentDetection={currentDetection}
+                detectionRange={detectionRange}
+              />
+            </Box>
+          </Paper>
+        ) : (
+          <Card
+            sx={{
+              width: "100%",
+              bgcolor: "background.default",
+              boxShadow: 2,
+              borderRadius: CARD_RADIUS,
+              p: 0,
+            }}
+          >
+            <CardContent sx={{ p: 1 }}>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                <SignalRangeSlider
+                  rangeDbm={rangeDbm}
+                  onChange={handleRangeChange}
                 />
-              </Typography>
-            </Box>
+                <PixelSizeSlider
+                  pixelSize={pixelSize}
+                  onChange={handlePixelSizeChange}
+                />
+                <ConnectionStatus
+                  isClearing={isClearing}
+                  connectionStatus={connectionStatus}
+                  isConnected={isConnected}
+                />
+                <ControlButtons
+                  isActive={isActive}
+                  setIsActive={setIsActive}
+                  isClearing={isClearing}
+                  handleClear={handleClear}
+                  isConnecting={isConnecting}
+                />
+                <DetectionInfo
+                  currentDetection={currentDetection}
+                  detectionRange={detectionRange}
+                />
+              </Box>
+            </CardContent>
+          </Card>
+        )}
 
-            {/* Control Buttons */}
-            <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
-              <Button
-                variant="contained"
-                color={isActive ? "error" : "success"}
-                onClick={() => setIsActive(!isActive)}
-                disabled={isClearing}
-              >
-                {isActive ? "Disconnect" : "Connect"}
-              </Button>
-
-              <Button
-                variant="outlined"
-                color="secondary"
-                onClick={handleClear}
-                disabled={isClearing}
-              >
-                Clear
-              </Button>
-            </Box>
-
-            {/* Detection Information */}
-            <Box sx={{ display: "flex", justifyContent: "space-between", mt: 1 }}>
-              <Typography variant="body1">
-                Detection: {currentDetection}
-              </Typography>
-              {currentDetection !== "None" && (
-                <Typography variant="body1">
-                  Range: {detectionRange.start} - {detectionRange.end}
-                </Typography>
-              )}
-            </Box>
-
-            {/* Error Messages */}
-            {error && (
-              <Typography variant="body2" color="error" sx={{ mt: 2 }}>
-                Error: {error}
-              </Typography>
-            )}
-          </Box>
-        </CardContent>
-      </Card>
+        {/* Error Modal */}
+        <ErrorModal
+          open={errorModalOpen}
+          message={error}
+          onClose={() => setErrorModalOpen(false)}
+        />
+      </Box>
     </Box>
   );
-};
-
-export default Spectrogram;
+}

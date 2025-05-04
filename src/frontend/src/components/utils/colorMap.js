@@ -1,4 +1,6 @@
-export const generateColorMap = () => {
+// colorMap.js
+
+export function generateColorMap() {
   const colMap = [];
   for (let i = 0; i < 256; i++) {
     let r, g, b;
@@ -22,4 +24,4 @@ export const generateColorMap = () => {
     colMap.push([r, g, b, 255]);
   }
   return colMap;
-};
+}

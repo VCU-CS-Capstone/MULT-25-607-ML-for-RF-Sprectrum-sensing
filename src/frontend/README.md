@@ -1,70 +1,111 @@
-# Getting Started with Create React App
+# MLRF Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This is the **frontend** for the MLRF (Machine Learning Radio Frequency) project, built with [Create React App](https://create-react-app.dev/).  
+It provides a responsive, real-time spectrogram visualization and control interface for RF signal detection, including WiFi and Bluetooth, via a WebSocket backend.
 
-## Available Scripts
+---
 
-In the project directory, you can run:
+## Features
 
-### `npm start`
+- **Real-time Spectrogram**: Visualizes incoming PSD (Power Spectral Density) data as a color spectrogram.
+- **Detection Overlay**: Highlights detected WiFi (GREEN) and Bluetooth regions (RED).
+- **Controls**: Adjust signal range, pixel size, and connection state.
+- **WebSocket Integration**: Connects to a backend server for live data.
+- **Error Handling**: User-friendly error messages and connection status.
+- **Fullscreen Mode**: Canvas and controls adapt for immersive analysis.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+---
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Getting Started
 
-### `npm test`
+### Prerequisites
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- [Node.js](https://nodejs.org/) (v16 or newer recommended)
+- [npm](https://www.npmjs.com/) (comes with Node.js)
 
-### `npm run build`
+### Installation
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+1. **Install dependencies:**
+   ```bash
+   pnpm install
+   ```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+2. **Start the development server:**
+   ```bash
+   pnpm start
+   ```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+   The app will open at [http://localhost:3000](http://localhost:3000).
 
-### `npm run eject`
+---
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Usage
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+- The frontend expects a WebSocket backend running at `ws://localhost:3030`.
+- Use the **Connect** button to start receiving data.
+- Adjust the **Signal Range** and **Pixel Size** sliders to tune the visualization.
+- Use the **Clear** button to reset the spectrogram.
+- Click the **Fullscreen** button (top right of the spectrogram) for an immersive view; controls will appear as an overlay in fullscreen.
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+---
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Project Structure
 
-## Learn More
+```
+src/
+  components/
+    Spectrogram.js
+    SpectrogramCanvas.js
+    ControlButtons.js
+    ConnectionStatus.js
+    DetectionInfo.js
+    PixelSizeSlider.js
+    SignalRangeSlider.js
+    ErrorModal.js
+  utils/
+    classify.js
+    colorMap.js
+    drawingUtils.js
+    psdUtils.js
+    useWindowSize.js
+    websocketHandler.js
+  App.js
+  index.js
+  index.css
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+---
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Customization
 
-### Code Splitting
+- **WebSocket URL**: Change the URL in `Spectrogram.js` or make it configurable if your backend runs elsewhere.
+- **Styling**: Uses [Material-UI](https://mui.com/) for UI components and theming.
+- **Detection Types**: Extend `classify.js` and `drawingUtils.js` to support more signal types if needed.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+---
 
-### Analyzing the Bundle Size
+## Troubleshooting
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+- **WebSocket Connection Error**:  
+  Make sure your backend server is running and accessible at `ws://localhost:3030`.
+- **Port Conflicts**:  
+  If port 3000 is in use, you can specify another port with `PORT=3001 npm start`.
 
-### Making a Progressive Web App
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+## License
 
-### Advanced Configuration
+This project is licensed under the MIT License.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+---
 
-### Deployment
+## Acknowledgments
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+- [Create React App](https://create-react-app.dev/)
+- [Material-UI](https://mui.com/)
+- [WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
 
-### `npm run build` fails to minify
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+**MLRF Frontend**  
+_Real-time RF signal visualization and control._
