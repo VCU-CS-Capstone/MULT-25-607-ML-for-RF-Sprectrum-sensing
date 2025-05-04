@@ -8,7 +8,7 @@ It provides a responsive, real-time spectrogram visualization and control interf
 ## Features
 
 - **Real-time Spectrogram**: Visualizes incoming PSD (Power Spectral Density) data as a color spectrogram.
-- **Detection Overlay**: Highlights detected WiFi (GREEN) and Bluetooth regions (RED).
+- **Detection Overlay**: Highlights detected WiFi (GREEN) and Bluetooth regions (RED)
 - **Controls**: Adjust signal range, pixel size, and connection state.
 - **WebSocket Integration**: Connects to a backend server for live data.
 - **Error Handling**: User-friendly error messages and connection status.
