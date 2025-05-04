@@ -1,18 +1,18 @@
-# MLRF Frontend
+# MLRF: Machine Learning for Radio Frequency Signal Classification
 
-This is the **frontend** for the MLRF (Machine Learning Radio Frequency) project, built with [Create React App](https://create-react-app.dev/).  
-It provides a responsive, real-time spectrogram visualization and control interface for RF signal detection, including WiFi and Bluetooth, via a WebSocket backend.
+The **MLRF Frontend** is a React-based web application for real-time visualization and control of RF signal classification, as part of the [MLRF](../README.md) (Machine Learning Radio Frequency) project.  
+It provides a responsive, real-time spectrogram and detection overlay for WiFi and Bluetooth signals, connecting to the MLRF backend via WebSocket.
 
 ---
 
 ## Features
 
-- **Real-time Spectrogram**: Visualizes incoming PSD (Power Spectral Density) data as a color spectrogram.
-- **Detection Overlay**: Highlights detected WiFi (GREEN) and Bluetooth regions (RED)
-- **Controls**: Adjust signal range, pixel size, and connection state.
-- **WebSocket Integration**: Connects to a backend server for live data.
-- **Error Handling**: User-friendly error messages and connection status.
-- **Fullscreen Mode**: Canvas and controls adapt for immersive analysis.
+- **Real-time Spectrogram:** Visualizes incoming PSD (Power Spectral Density) data as a color spectrogram.
+- **Detection Overlay:** Highlights detected WiFi (green) and Bluetooth (red) regions.
+- **Interactive Controls:** Adjust signal range, pixel size, and connection state.
+- **WebSocket Integration:** Connects to a backend server for live data streaming.
+- **Error Handling:** User-friendly error messages and connection status indicators.
+- **Fullscreen Mode:** Immersive analysis with adaptive controls.
 
 ---
 
@@ -21,7 +21,7 @@ It provides a responsive, real-time spectrogram visualization and control interf
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) (v16 or newer recommended)
-- [npm](https://www.npmjs.com/) (comes with Node.js)
+- [pnpm](https://pnpm.io/) (install with `npm install -g pnpm`)
 
 ### Installation
 
@@ -34,7 +34,6 @@ It provides a responsive, real-time spectrogram visualization and control interf
    ```bash
    pnpm start
    ```
-
    The app will open at [http://localhost:3000](http://localhost:3000).
 
 ---
@@ -53,59 +52,75 @@ It provides a responsive, real-time spectrogram visualization and control interf
 
 ```
 src/
-  components/
-    Spectrogram.js
-    SpectrogramCanvas.js
-    ControlButtons.js
-    ConnectionStatus.js
-    DetectionInfo.js
-    PixelSizeSlider.js
-    SignalRangeSlider.js
-    ErrorModal.js
-  utils/
-    classify.js
-    colorMap.js
-    drawingUtils.js
-    psdUtils.js
-    useWindowSize.js
-    websocketHandler.js
-  App.js
-  index.js
-  index.css
+ |
+ |-- components/
+ |   |-- Spectrogram.js         # Main spectrogram display component
+ |   |-- SpectrogramCanvas.js   # Canvas rendering logic
+ |   |-- ControlButtons.js      # Play/Pause/etc. buttons
+ |   |-- ConnectionStatus.js    # WebSocket connection indicator
+ |   |-- DetectionInfo.js       # Displays classification results
+ |   |-- PixelSizeSlider.js     # Slider for pixel size control
+ |   |-- SignalRangeSlider.js   # Slider for signal range control
+ |   |-- ErrorModal.js          # Modal for displaying errors
+ |   |-- ServerAddressModal.js  # Modal for entering server address
+ |
+ |-- utils/
+ |   |-- classify.js            # Frontend classification enum
+ |   |-- colorMap.js            # Spectrogram color mapping
+ |   |-- drawingUtils.js        # Canvas drawing helpers
+ |   |-- psdUtils.js            # Power Spectral Density calculations/helpers
+ |   |-- useWindowSize.js       # Hook for tracking window size
+ |   |-- websocketHandler.js    # WebSocket connection management
+ |
+ |-- App.js                     # Main application component
+ |-- index.js                   # Application entry point
+ |-- index.css                  # Global styles (Empty)
 ```
+
+- **components/**: UI and visualization components.
+- **utils/**: Utility functions for signal processing, drawing, and WebSocket handling.
+- **App.js**: Main application logic and state management.
 
 ---
 
 ## Customization
 
-- **WebSocket URL**: Change the URL in `Spectrogram.js` or make it configurable if your backend runs elsewhere.
-- **Styling**: Uses [Material-UI](https://mui.com/) for UI components and theming.
-- **Detection Types**: Extend `classify.js` and `drawingUtils.js` to support more signal types if needed.
+- **WebSocket URL:**  
+  Change the URL in `Spectrogram.js` or make it configurable if your backend runs elsewhere.
+- **Styling:**  
+  Uses [Material-UI](https://mui.com/) for UI components and theming. You can customize the theme or component styles as needed.
+- **Detection Types:**  
+  Extend `classify.js` and `drawingUtils.js` to support more signal types or custom overlays.
+- **Spectrogram Parameters:**  
+  Adjust color maps, time window, or frequency range in the relevant components or utility files.
 
 ---
 
 ## Troubleshooting
 
-- **WebSocket Connection Error**:  
-  Make sure your backend server is running and accessible at `ws://localhost:3030` or other endpoint.
-- **Port Conflicts**:  
-  If port 3000 is in use, you can specify another port with `PORT=3001 npm start`.
+- **WebSocket Connection Error:**  
+  Make sure your backend server is running and accessible at `ws://localhost:3030` or your configured endpoint.
+- **Port Conflicts:**  
+  If port 3000 is in use, you can specify another port with `PORT=3001 pnpm start`.
+- **Data Not Displaying:**  
+  Ensure the backend is streaming data in the expected format:  
+  `[psd_data..., detection, event_start, event_end]`
 
 ---
 
-## License
+## Requirements
 
-This project is licensed under the MIT License.
-
----
-
-## Acknowledgments
-
-- [Create React App](https://create-react-app.dev/)
-- [Material-UI](https://mui.com/)
-- [WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
+- Node.js 16+
+- pnpm
+- React
+- Material-UI
 
 ---
 
-**MLRF Frontend**  
-_Real-time RF signal visualization and control._
+## Contact
+
+For questions, email [kushpatel169@gmail.com](mailto:kushpatel169@gmail.com). :D
+
+---
+
+**Happy hacking!**
