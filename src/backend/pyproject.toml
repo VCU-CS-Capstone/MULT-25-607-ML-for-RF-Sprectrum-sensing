@@ -1,29 +1,17 @@
 [project]
-name = "pythonsocks"
+name = "MLRF"
 version = "0.1.0"
-description = "Add your description here"
+description = "Machine Learning for RF backend"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "dotenv>=0.9.9",
     "joblib>=1.4.2",
-    "matplotlib>=3.10.1",
-    "pyqt6>=6.8.1",
-    "pyqtgraph>=0.13.7",
-    "snakeviz>=2.2.2",
     "websockets>=15.0",
-    "flake8>=7.1.2",
     "h5py>=3.12.1",
-    "ipykernel",
-    "ipywidgets",
     "lightgbm>=4.6.0",
     "pandas>=2.2.3",
-    "plot>=0.6.5",
-    "pyqt5>=5.15.11",
-    "pyside6>=6.8.2.1",
     "scikit-learn>=1.6.1",
     "scipy>=1.14.1",
-    "seaborn>=0.13.2",
     "torch>=2.5.1",
     "tqdm>=4.67.1",
     "xgboost>=3.0.0",
