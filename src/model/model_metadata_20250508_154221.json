@@ -1,0 +1,76 @@
+{
+    "timestamp": "20250508_154221",
+    "feature_method": "combined",
+    "model_file": "lightgbm_model_20250508_154221.joblib",
+    "confusion_matrix_file": "confusion_matrix_20250508_154221.png",
+    "performance": {
+        "accuracy_initial": 100.0,
+        "accuracy_adjusted": 99.99779117796479,
+        "num_predictions_adjusted": 1,
+        "adjustment_percentage": 0.0022088220352086234,
+        "sensitivity": 0.9999586435070306,
+        "specificity": 1.0,
+        "f1_score": 0.9999793213259166,
+        "roc_auc": 1.0000000000000002,
+        "training_time_seconds": 1.9897572994232178
+    },
+    "preprocessing": {
+        "event_detection": true,
+        "noise_floor": -190.15182495117188,
+        "width_based_adjustment": true,
+        "width_threshold_mhz": 10.0
+    },
+    "model_parameters": {
+        "n_estimators": 100,
+        "learning_rate": 0.05,
+        "max_depth": 15,
+        "num_leaves": 31,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 0.1,
+        "reg_lambda": 0.1
+    },
+    "top_features": [
+        [
+            "Max BT Energy",
+            205.0
+        ],
+        [
+            "WiFi/BT Energy Ratio",
+            155.0
+        ],
+        [
+            "Max WiFi Energy",
+            93.0
+        ],
+        [
+            "Std",
+            93.0
+        ],
+        [
+            "Max",
+            68.0
+        ],
+        [
+            "Std WiFi Energy",
+            62.0
+        ],
+        [
+            "Mean",
+            41.0
+        ],
+        [
+            "Std 6dB Width",
+            40.0
+        ],
+        [
+            "Std 10dB Width",
+            36.0
+        ],
+        [
+            "Std BT Energy",
+            31.0
+        ]
+    ],
+    "feature_dimensions": 78
+}
