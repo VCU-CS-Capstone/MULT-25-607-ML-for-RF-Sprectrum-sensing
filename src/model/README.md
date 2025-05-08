@@ -8,7 +8,7 @@ This project implements a machine learning pipeline to classify Radio Frequency 
 .
 ├── MLRF_1.5.py                 # Main script to run the classification pipeline
 ├── data/
-│   └── dataset.h5              # Placeholder for the HDF5 data file
+│   └── dataset.h5              # The HDF5 data file
 ├── MLRF/
 │   ├── __init__.py             # Makes MLRF a Python package
 │   ├── utils.py                # Core utility functions (e.g., event_detector)
@@ -143,16 +143,21 @@ This is a crucial step where meaningful characteristics are derived from the pre
 
 ## How to Run
 
-1.  **Ensure Dependencies:** Install necessary Python libraries:
+1.  **Ensure Dependencies:** Install UV (package manager):
     ```bash
-    pip install numpy h5py tqdm scikit-learn lightgbm joblib matplotlib
+    pip install uv
     ```
-2.  **Prepare Data:** Place your HDF5 data file (e.g., `dataset.h5`) in the `./data/` directory. The keys in the H5 file should be named such that WiFi samples start with "wifi" and Bluetooth samples start with "bt" (or adjust the labeling logic in `MLRF/data_loader.py`).
-3.  **Run the Main Script:**
+2. **Sync Dependencies:** Installs python version and packages:
     ```bash
-    python MLRF_1.5.py
+    uv sync
     ```
-4.  **Outputs:** The script will generate the model file, confusion matrix image, and metadata JSON file in the root directory, timestamped to avoid overwriting previous runs.
+
+3.  **Prepare Data:** Place your HDF5 data file (e.g., `dataset.h5`) in the `./data/` directory. The keys in the H5 file should be named such that WiFi samples start with "wifi" and Bluetooth samples start with "bluetooth" (or adjust the labeling logic in `MLRF/data_loader.py`).
+4.  **Run the Main Script:**
+    ```bash
+    uv run MLRF_1.5.py
+    ```
+5.  **Outputs:** The script will generate the model file, confusion matrix image, and metadata JSON file in the root directory, timestamped to avoid overwriting previous runs.
 
 ## Customization
 
