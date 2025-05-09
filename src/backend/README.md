@@ -18,7 +18,6 @@ It supports both live SDR (USRP) and HDF5 file data sources, and serves results 
 
 ### Prerequisites
 
-- Python 3.11
 - [UV](https://docs.astral.sh/uv/) (Package Manager, venv manager and more)
 - For SDR support:
     - UHD (Universal Hardware Driver) and USRP drivers installed (see [Ettus Research UHD](https://github.com/EttusResearch/uhd)).

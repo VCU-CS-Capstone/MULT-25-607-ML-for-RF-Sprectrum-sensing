@@ -24,15 +24,11 @@ The final deliverable will be a complete system—integrating data collection, s
 
 ![](./Architecture.png) 
 
-*This section will be expanded as the system design matures.*
-
-**Planned High-Level Architecture:**
+**High-Level Architecture:**
 - **Signal Acquisition:** SDR hardware (e.g., USRP B210, RTL-SDR V3) captures RF signals.
 - **Data Processing Pipeline:** Python-based application processes raw data, performs FFT, and extracts features.
 - **Machine Learning Module:** Trained models (e.g., LightGBM) classify signals as WiFi, Bluetooth, or neither.
 - **Deployment/Interface:** Command-line tools for training and inference; potential for integration with other systems or user interfaces.
-
-Components will be distributed across data acquisition hardware, processing servers, and user endpoints as appropriate for the deployment scenario.
 
 ---
 
@@ -60,7 +56,6 @@ The system is organized into modular Python components, each responsible for a s
 ## 4. Installation Guide
 
 ### Prerequisites
-- Python 3.8 or newer
 - [UV](https://github.com/astral-sh/uv) for dependency management
 - HDF5 data file containing PSD samples (with appropriate key naming)
 
@@ -84,15 +79,40 @@ The system is organized into modular Python components, each responsible for a s
 ```bash
 uv run MLRF_1.5.py
 ```
-
-### Troubleshooting
-- Verify all dependencies are installed.
-- Check that your data file is in the correct format and location.
-- Review error messages for missing files or misconfigurations.
-
 ---
 
 ## 5. User Guide
+
+### UHD/USRP Install Guide
+
+This is for MacOs or Linux (Ubuntu Latest LTS), there is no windows support in this project.
+
+1. Clone the [UHD](https://github.com/EttusResearch/uhd) repo.
+
+2. Run uv sync to download python dependencies and install clang/gcc, cmake, boost and libusb.
+    - Full instructions for building UHD is [here](https://files.ettus.com/manual/page_build_guide.html).
+
+3. Source the python virtual environment to which UHD will target.
+    ```bash
+    source some/path/to/.venv/bin/activate.*
+    ```
+4. Navigate inside to the host folder inside the uhd repo and run cmake.
+    ```bash
+    cd path/to/uhd/host
+    mkdir build
+    cd build
+    cmake ../
+    ```
+5. Build and install UHD [!IMPORTANT] SOURCE THE PYTHON VIRTUAL ENV TO USE.
+    ```bash
+    make -j N (number of physical cpu cores)
+    sudo make install
+    cd python
+    cp uhd /path/to/.venv/lib/python3.11/site-packages/ 
+    cp usrp_mpm /path/to/.venv/lib/python3.11/site-packages/
+    ```
+6. Connect the USRP device and run ```uhd_usrp_probe``` and ensure the sdr is recognized.
+
 
 ### Running the Classifier
 1. Ensure your data is prepared and dependencies are installed.
@@ -124,4 +144,12 @@ uv run MLRF_1.5.py
 - **Model File:** Use for future predictions or deployment.
 - **Confusion Matrix:** Visualizes classification performance.
 - **Metadata:** Contains run details, feature importances, and metrics.
+
+### Running the whole package 
+
+1. Ensure both frontend and backend packages are installed and UHD is built
+
+2. Start the front end with `pnpm start` and start the backend with `uv run serve.py --model models/MLRF_1.5.joblib --data_path data.h5`
+
+3. For more information please see the readme's in side the frontend and backend.
 
