@@ -19,11 +19,23 @@ The **Data Collection Notebook** is intended only for asynchronous data collecti
 ## Usage
 
 - For the GL-AR300M16-EXT Router follow (https://docs.gl-inet.com/router/en/3/tutorials/file_sharing/) to setup file sharing
-- For either emitter 
+- The SDR's frontend has a max input of -15dBm
+- Connect either emitter to a spectrum analyzer and through attenuation ensure the signal is below this threshold
+- Connect emitter and attenuation to SDR
+- Name your h5 file at top of main as a test file and set a low number of collects in global variable
+- Uncomment plots and run the script
+- Ensure the plots look as expected and match results on spectrum analyzer
+- Recomment plots as this speeds up data collection
+- Name h5 file appropriately for source and set a high nmumber of collects and run file
 
 ---
 
 ## Troubleshooting
+- **No Devices Found:**  
+  Simply unplug and replug SDR
+- Multiple debug statements are setup throughout the code to be able to check data is properly formatted at each step as well as timing
+- Most issues can be resolved by examining the plots to understand what is happening with incoming data
+
 
 --
 
