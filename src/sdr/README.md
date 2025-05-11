@@ -26,7 +26,7 @@ The **Data Collection Notebook** is intended only for asynchronous data collecti
 - Uncomment plots and run the script
 - Ensure the plots look as expected and match results on spectrum analyzer
 - Recomment plots as this speeds up data collection
-- Name h5 file appropriately for source and set a high nmumber of collects and run file
+- Name h5 file appropriately for source and set a high number of collects and run file
 
 ---
 
@@ -36,8 +36,7 @@ The **Data Collection Notebook** is intended only for asynchronous data collecti
 - Multiple debug statements are setup throughout the code to be able to check data is properly formatted at each step as well as timing
 - Most issues can be resolved by examining the plots to understand what is happening with incoming data
 
-
---
+---
 
 ## Requirements
 
