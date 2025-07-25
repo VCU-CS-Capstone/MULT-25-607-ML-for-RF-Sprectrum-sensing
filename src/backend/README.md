@@ -22,6 +22,7 @@ It supports both live SDR (USRP) and HDF5 file data sources, and serves results 
 - For SDR support:
     - UHD (Universal Hardware Driver) and USRP drivers installed (see [Ettus Research UHD](https://github.com/EttusResearch/uhd)).
     - Compatible USRP hardware.
+    - RUN THE SETUP.SH SCRIPT IN THE ROOT FIRST!!!
 
 ### Installation
 
